@@ -18,6 +18,7 @@ const orderRoutes = require('./routes/orders');
 const addressRoutes = require('./routes/addresses');
 const adminRoutes = require('./routes/admin');
 const couponRoutes = require('./routes/coupons');
+const afterSaleRoutes = require('./routes/afterSales');
 
 const app = express();
 const fs = require('fs');
@@ -54,6 +55,7 @@ app.use('/api/orders', requireAuth, orderRoutes);
 app.use('/api/addresses', requireAuth, addressRoutes);
 app.use('/api/admin', requireAuth, requireRole('ADMIN'), adminRoutes);
 app.use('/api/coupons', requireAuth, couponRoutes);
+app.use('/api/after-sales', requireAuth, afterSaleRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'NOT_FOUND' });

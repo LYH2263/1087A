@@ -146,6 +146,21 @@ const batchRestockSchema = z.object({
   })).min(1)
 });
 
+const createAfterSaleSchema = z.object({
+  orderId: z.string().min(1),
+  type: z.enum(['RETURN', 'EXCHANGE']).default('RETURN'),
+  reason: z.enum(['QUALITY_ISSUE', 'WRONG_ITEM', 'DAMAGED', 'NOT_AS_DESCRIBED', 'NO_LONGER_WANTED', 'OTHER']),
+  description: z.string().max(500).optional(),
+  items: z.array(z.object({
+    orderItemId: z.string().min(1),
+    quantity: z.number().int().min(1)
+  })).min(1)
+});
+
+const rejectAfterSaleSchema = z.object({
+  rejectReason: z.string().min(1).max(500)
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -165,5 +180,7 @@ module.exports = {
   wishlistAddSchema,
   stockThresholdSchema,
   singleRestockSchema,
-  batchRestockSchema
+  batchRestockSchema,
+  createAfterSaleSchema,
+  rejectAfterSaleSchema
 };

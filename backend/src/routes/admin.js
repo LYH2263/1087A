@@ -5,7 +5,7 @@ const multer = require('multer');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema } = require('../validators');
+const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema, rejectAfterSaleSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 const { generateCouponCode } = require('../utils/coupon');
 
@@ -221,7 +221,8 @@ router.get('/orders', asyncHandler(async (req, res) => {
       author: item.author,
       coverUrl: item.coverUrl,
       price: fromCents(item.priceCents),
-      quantity: item.quantity
+      quantity: item.quantity,
+      returnedQuantity: item.returnedQuantity
     }))
   })));
 }));
@@ -754,6 +755,233 @@ router.get('/stock/restock-logs', asyncHandler(async (req, res) => {
       createdAt: log.createdAt
     }))
   });
+}));
+
+function mapAdminAfterSale(afterSale) {
+  return {
+    id: afterSale.id,
+    orderId: afterSale.orderId,
+    userId: afterSale.userId,
+    type: afterSale.type,
+    status: afterSale.status,
+    reason: afterSale.reason,
+    description: afterSale.description,
+    rejectReason: afterSale.rejectReason,
+    totalAmount: fromCents(afterSale.totalAmountCents),
+    reviewedBy: afterSale.reviewedBy,
+    reviewedAt: afterSale.reviewedAt,
+    createdAt: afterSale.createdAt,
+    updatedAt: afterSale.updatedAt,
+    user: afterSale.user ? {
+      id: afterSale.user.id,
+      username: afterSale.user.username,
+      phone: afterSale.user.phone
+    } : undefined,
+    order: afterSale.order ? {
+      id: afterSale.order.id,
+      status: afterSale.order.status,
+      recipient: afterSale.order.recipient,
+      phone: afterSale.order.phone
+    } : undefined,
+    items: afterSale.items.map((item) => ({
+      id: item.id,
+      orderItemId: item.orderItemId,
+      bookId: item.bookId,
+      title: item.title,
+      author: item.author,
+      coverUrl: item.coverUrl,
+      price: fromCents(item.priceCents),
+      quantity: item.quantity
+    }))
+  };
+}
+
+router.get('/after-sales', asyncHandler(async (req, res) => {
+  const { status, type } = req.query;
+  const where = {};
+  if (status) {
+    where.status = String(status);
+  }
+  if (type) {
+    where.type = String(type);
+  }
+
+  const afterSales = await prisma.afterSale.findMany({
+    where,
+    include: {
+      items: true,
+      user: true,
+      order: true
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  res.json(afterSales.map(mapAdminAfterSale));
+}));
+
+router.get('/after-sales/:id', asyncHandler(async (req, res) => {
+  const afterSale = await prisma.afterSale.findUnique({
+    where: { id: req.params.id },
+    include: {
+      items: true,
+      user: true,
+      order: { include: { items: true } }
+    }
+  });
+
+  if (!afterSale) {
+    throw new ApiError(404, 'AFTERSALE_NOT_FOUND');
+  }
+
+  res.json(mapAdminAfterSale(afterSale));
+}));
+
+router.post('/after-sales/:id/approve', asyncHandler(async (req, res) => {
+  const afterSale = await prisma.afterSale.findUnique({
+    where: { id: req.params.id },
+    include: {
+      items: true,
+      order: { include: { items: true } }
+    }
+  });
+
+  if (!afterSale) {
+    throw new ApiError(404, 'AFTERSALE_NOT_FOUND');
+  }
+
+  if (afterSale.status !== 'PENDING') {
+    throw new ApiError(400, 'AFTERSALE_NOT_PENDING', { currentStatus: afterSale.status });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.afterSale.update({
+      where: { id: afterSale.id },
+      data: {
+        status: 'PROCESSING',
+        reviewedBy: req.user.id,
+        reviewedAt: new Date()
+      }
+    });
+
+    for (const item of afterSale.items) {
+      const orderItem = afterSale.order.items.find((oi) => oi.id === item.orderItemId);
+      if (!orderItem) {
+        throw new ApiError(400, 'ORDER_ITEM_NOT_FOUND', { orderItemId: item.orderItemId });
+      }
+
+      const newReturnedQty = orderItem.returnedQuantity + item.quantity;
+      if (newReturnedQty > orderItem.quantity) {
+        throw new ApiError(400, 'EXCEED_RETURNABLE_QUANTITY', {
+          orderItemId: item.orderItemId,
+          requested: item.quantity,
+          available: orderItem.quantity - orderItem.returnedQuantity
+        });
+      }
+
+      await tx.orderItem.update({
+        where: { id: item.orderItemId },
+        data: { returnedQuantity: newReturnedQty }
+      });
+
+      await tx.book.update({
+        where: { id: item.bookId },
+        data: {
+          stock: { increment: item.quantity },
+          sales: { decrement: item.quantity }
+        }
+      });
+    }
+
+    const allOrderItems = afterSale.order.items;
+    const allFullyReturned = allOrderItems.every(
+      (oi) => {
+        const matched = afterSale.items.find((asi) => asi.orderItemId === oi.id);
+        const thisReturned = matched ? matched.quantity : 0;
+        return (oi.returnedQuantity + thisReturned) >= oi.quantity;
+      }
+    );
+
+    const newOrderStatus = allFullyReturned ? 'RETURNED' : 'RETURNING';
+    if (afterSale.order.status !== 'RETURNING' && afterSale.order.status !== 'RETURNED') {
+      await tx.order.update({
+        where: { id: afterSale.orderId },
+        data: { status: newOrderStatus }
+      });
+    } else if (allFullyReturned) {
+      await tx.order.update({
+        where: { id: afterSale.orderId },
+        data: { status: 'RETURNED' }
+      });
+    }
+  });
+
+  const updated = await prisma.afterSale.findUnique({
+    where: { id: req.params.id },
+    include: { items: true, user: true, order: true }
+  });
+
+  res.json(mapAdminAfterSale(updated));
+}));
+
+router.post('/after-sales/:id/reject', asyncHandler(async (req, res) => {
+  const payload = rejectAfterSaleSchema.parse(req.body);
+
+  const afterSale = await prisma.afterSale.findUnique({
+    where: { id: req.params.id }
+  });
+
+  if (!afterSale) {
+    throw new ApiError(404, 'AFTERSALE_NOT_FOUND');
+  }
+
+  if (afterSale.status !== 'PENDING') {
+    throw new ApiError(400, 'AFTERSALE_NOT_PENDING', { currentStatus: afterSale.status });
+  }
+
+  await prisma.afterSale.update({
+    where: { id: afterSale.id },
+    data: {
+      status: 'REJECTED',
+      rejectReason: payload.rejectReason,
+      reviewedBy: req.user.id,
+      reviewedAt: new Date()
+    }
+  });
+
+  const updated = await prisma.afterSale.findUnique({
+    where: { id: req.params.id },
+    include: { items: true, user: true, order: true }
+  });
+
+  res.json(mapAdminAfterSale(updated));
+}));
+
+router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
+  const afterSale = await prisma.afterSale.findUnique({
+    where: { id: req.params.id }
+  });
+
+  if (!afterSale) {
+    throw new ApiError(404, 'AFTERSALE_NOT_FOUND');
+  }
+
+  if (afterSale.status !== 'PROCESSING') {
+    throw new ApiError(400, 'AFTERSALE_NOT_PROCESSING', { currentStatus: afterSale.status });
+  }
+
+  await prisma.afterSale.update({
+    where: { id: afterSale.id },
+    data: {
+      status: 'COMPLETED'
+    }
+  });
+
+  const updated = await prisma.afterSale.findUnique({
+    where: { id: req.params.id },
+    include: { items: true, user: true, order: true }
+  });
+
+  res.json(mapAdminAfterSale(updated));
 }));
 
 module.exports = router;

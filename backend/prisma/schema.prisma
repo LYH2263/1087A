@@ -24,6 +24,30 @@ enum OrderStatus {
   COMPLETED
   CANCELED
   REFUNDED
+  RETURNING
+  RETURNED
+}
+
+enum AfterSaleStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSING
+  COMPLETED
+}
+
+enum AfterSaleType {
+  RETURN
+  EXCHANGE
+}
+
+enum AfterSaleReason {
+  QUALITY_ISSUE
+  WRONG_ITEM
+  DAMAGED
+  NOT_AS_DESCRIBED
+  NO_LONGER_WANTED
+  OTHER
 }
 
 enum PaymentMethod {
@@ -51,21 +75,22 @@ enum UserCouponStatus {
 }
 
 model User {
-  id           String          @id @default(cuid())
-  username     String          @unique
-  email        String          @unique
-  phone        String          @unique
-  passwordHash String
-  role         Role            @default(USER)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  sessions     Session[]
-  addresses    Address[]
-  cartItems    CartItem[]
-  wishlistItems WishlistItem[]
-  orders       Order[]
-  passwordResets PasswordReset[]
-  userCoupons  UserCoupon[]
+  id              String          @id @default(cuid())
+  username        String          @unique
+  email           String          @unique
+  phone           String          @unique
+  passwordHash    String
+  role            Role            @default(USER)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  sessions        Session[]
+  addresses       Address[]
+  cartItems       CartItem[]
+  wishlistItems   WishlistItem[]
+  orders          Order[]
+  passwordResets  PasswordReset[]
+  userCoupons     UserCoupon[]
+  afterSales      AfterSale[]
 }
 
 model Session {
@@ -115,6 +140,7 @@ model Book {
   orderItems      OrderItem[]
   stockThreshold  StockThreshold?
   restockLogs     StockRestockLog[]
+  afterSaleItems  AfterSaleItem[]
 }
 
 model CartItem {
@@ -181,20 +207,57 @@ model Order {
   user          User         @relation(fields: [userId], references: [id])
   items         OrderItem[]
   userCoupon    UserCoupon?  @relation(fields: [userCouponId], references: [id])
+  afterSales    AfterSale[]
 }
 
 model OrderItem {
-  id        String   @id @default(cuid())
-  orderId   String
-  bookId    String
-  title     String
-  author    String
-  coverUrl  String
-  priceCents Int
-  quantity  Int
-  createdAt DateTime @default(now())
-  order     Order    @relation(fields: [orderId], references: [id])
-  book      Book     @relation(fields: [bookId], references: [id])
+  id                String        @id @default(cuid())
+  orderId           String
+  bookId            String
+  title             String
+  author            String
+  coverUrl          String
+  priceCents        Int
+  quantity          Int
+  returnedQuantity  Int           @default(0)
+  createdAt         DateTime      @default(now())
+  order             Order         @relation(fields: [orderId], references: [id])
+  book              Book          @relation(fields: [bookId], references: [id])
+  afterSaleItems    AfterSaleItem[]
+}
+
+model AfterSale {
+  id              String          @id @default(cuid())
+  orderId         String
+  userId          String
+  type            AfterSaleType   @default(RETURN)
+  status          AfterSaleStatus @default(PENDING)
+  totalAmountCents Int            @default(0)
+  reason          AfterSaleReason
+  description     String?
+  rejectReason    String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  order           Order           @relation(fields: [orderId], references: [id])
+  user            User            @relation(fields: [userId], references: [id])
+  items           AfterSaleItem[]
+}
+
+model AfterSaleItem {
+  id            String    @id @default(cuid())
+  afterSaleId   String
+  orderItemId   String
+  bookId        String
+  title         String
+  author        String
+  coverUrl      String
+  priceCents    Int
+  quantity      Int
+  afterSale     AfterSale @relation(fields: [afterSaleId], references: [id])
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id])
+  book          Book      @relation(fields: [bookId], references: [id])
 }
 
 model Coupon {

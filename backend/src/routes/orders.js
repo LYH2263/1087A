@@ -33,7 +33,8 @@ function mapOrder(order) {
       author: item.author,
       coverUrl: item.coverUrl,
       price: fromCents(item.priceCents),
-      quantity: item.quantity
+      quantity: item.quantity,
+      returnedQuantity: item.returnedQuantity
     }))
   };
 }
