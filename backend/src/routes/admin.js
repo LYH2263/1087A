@@ -5,7 +5,7 @@ const multer = require('multer');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema, rejectAfterSaleSchema, bookSpecSchema, bookSpecUpdateSchema } = require('../validators');
+const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema, rejectAfterSaleSchema, bookSpecSchema, bookSpecUpdateSchema, createSalesGoalSchema, updateSalesGoalSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 const { generateCouponCode } = require('../utils/coupon');
 const { createOrderNotification } = require('../utils/notification');
@@ -1248,6 +1248,303 @@ router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
   res.json({
     ...mapAdminAfterSale(updated),
     refundedPoints
+  });
+}));
+
+function getMonthRange(year, month) {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+  return { start, end };
+}
+
+async function getMonthStats(year, month) {
+  const { start, end } = getMonthRange(year, month);
+
+  const validStatuses = ['PAID', 'SHIPPED', 'COMPLETED'];
+  const refundStatuses = ['REFUNDED'];
+
+  const validOrders = await prisma.order.aggregate({
+    _count: { _all: true },
+    _sum: { totalCents: true },
+    where: {
+      status: { in: validStatuses },
+      createdAt: { gte: start, lt: end }
+    }
+  });
+
+  const refundOrders = await prisma.order.aggregate({
+    _count: { _all: true },
+    _sum: { totalCents: true },
+    where: {
+      status: { in: refundStatuses },
+      createdAt: { gte: start, lt: end }
+    }
+  });
+
+  const validCount = validOrders._count._all || 0;
+  const validRevenue = validOrders._sum.totalCents || 0;
+  const refundCount = refundOrders._count._all || 0;
+  const refundRevenue = refundOrders._sum.totalCents || 0;
+
+  const netCount = validCount;
+  const netRevenue = validRevenue - refundRevenue;
+
+  return {
+    validOrders: validCount,
+    validRevenue: fromCents(validRevenue),
+    refundOrders: refundCount,
+    refundRevenue: fromCents(refundRevenue),
+    netOrders: netCount,
+    netRevenue: fromCents(netRevenue),
+    validRevenueCents: validRevenue,
+    refundRevenueCents: refundRevenue,
+    netRevenueCents: netRevenue
+  };
+}
+
+function calculateForecast(year, month, netRevenueCents, netOrders) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  if (currentYear !== year || currentMonth !== month) {
+    return { forecastRevenue: null, forecastOrders: null, daysPassed: null, daysTotal: null, progress: null };
+  }
+
+  const { start, end } = getMonthRange(year, month);
+  const totalMs = end - start;
+  const passedMs = now - start;
+
+  const daysTotal = Math.ceil(totalMs / (1000 * 60 * 60 * 24));
+  const daysPassed = Math.min(daysTotal, Math.max(0, Math.floor(passedMs / (1000 * 60 * 60 * 24))) + 1);
+  const progress = daysTotal > 0 ? (daysPassed / daysTotal) : 0;
+
+  if (progress <= 0) {
+    return { forecastRevenue: 0, forecastOrders: 0, daysPassed, daysTotal, progress: 0 };
+  }
+
+  const forecastRevenueCents = Math.round(netRevenueCents / progress);
+  const forecastOrders = Math.round(netOrders / progress);
+
+  return {
+    forecastRevenue: fromCents(forecastRevenueCents),
+    forecastOrders,
+    daysPassed,
+    daysTotal,
+    progress: Math.min(1, progress)
+  };
+}
+
+function mapSalesGoal(goal) {
+  return {
+    id: goal.id,
+    year: goal.year,
+    month: goal.month,
+    revenueGoal: fromCents(goal.revenueGoalCents),
+    revenueGoalCents: goal.revenueGoalCents,
+    orderGoal: goal.orderGoal,
+    createdBy: goal.createdBy,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt
+  };
+}
+
+router.get('/goals', asyncHandler(async (req, res) => {
+  const { year, month } = req.query;
+  const where = {};
+  if (year) where.year = Number(year);
+  if (month) where.month = Number(month);
+
+  const goals = await prisma.salesGoal.findMany({
+    where,
+    orderBy: [{ year: 'desc' }, { month: 'desc' }]
+  });
+
+  const goalsWithStats = [];
+  for (const goal of goals) {
+    const stats = await getMonthStats(goal.year, goal.month);
+    const forecast = calculateForecast(goal.year, goal.month, stats.netRevenueCents, stats.netOrders);
+    const revenuePercent = goal.revenueGoalCents > 0 ? (stats.netRevenueCents / goal.revenueGoalCents) * 100 : 0;
+    const orderPercent = goal.orderGoal > 0 ? (stats.netOrders / goal.orderGoal) * 100 : 0;
+
+    goalsWithStats.push({
+      ...mapSalesGoal(goal),
+      ...stats,
+      ...forecast,
+      revenuePercent: Math.min(999, revenuePercent),
+      orderPercent: Math.min(999, orderPercent),
+      revenueAchieved: stats.netRevenueCents >= goal.revenueGoalCents,
+      orderAchieved: stats.netOrders >= goal.orderGoal
+    });
+  }
+
+  res.json(goalsWithStats);
+}));
+
+router.get('/goals/:year/:month', asyncHandler(async (req, res) => {
+  const year = Number(req.params.year);
+  const month = Number(req.params.month);
+
+  const goal = await prisma.salesGoal.findUnique({
+    where: { year_month: { year, month } }
+  });
+
+  const stats = await getMonthStats(year, month);
+
+  if (!goal) {
+    res.json({
+      goal: null,
+      ...stats,
+      forecast: calculateForecast(year, month, stats.netRevenueCents, stats.netOrders),
+      hasGoal: false
+    });
+    return;
+  }
+
+  const forecast = calculateForecast(year, month, stats.netRevenueCents, stats.netOrders);
+  const revenuePercent = goal.revenueGoalCents > 0 ? (stats.netRevenueCents / goal.revenueGoalCents) * 100 : 0;
+  const orderPercent = goal.orderGoal > 0 ? (stats.netOrders / goal.orderGoal) * 100 : 0;
+
+  res.json({
+    goal: mapSalesGoal(goal),
+    ...stats,
+    forecast,
+    revenuePercent: Math.min(999, revenuePercent),
+    orderPercent: Math.min(999, orderPercent),
+    revenueAchieved: stats.netRevenueCents >= goal.revenueGoalCents,
+    orderAchieved: stats.netOrders >= goal.orderGoal,
+    hasGoal: true
+  });
+}));
+
+router.post('/goals', asyncHandler(async (req, res) => {
+  const payload = createSalesGoalSchema.parse(req.body);
+
+  const existing = await prisma.salesGoal.findUnique({
+    where: { year_month: { year: payload.year, month: payload.month } }
+  });
+
+  if (existing) {
+    throw new ApiError(409, 'GOAL_ALREADY_EXISTS');
+  }
+
+  const goal = await prisma.salesGoal.create({
+    data: {
+      year: payload.year,
+      month: payload.month,
+      revenueGoalCents: toCents(payload.revenueGoal),
+      orderGoal: payload.orderGoal,
+      createdBy: req.user?.id
+    }
+  });
+
+  res.status(201).json(mapSalesGoal(goal));
+}));
+
+router.put('/goals/:year/:month', asyncHandler(async (req, res) => {
+  const year = Number(req.params.year);
+  const month = Number(req.params.month);
+  const payload = updateSalesGoalSchema.parse(req.body);
+
+  const existing = await prisma.salesGoal.findUnique({
+    where: { year_month: { year, month } }
+  });
+
+  if (!existing) {
+    throw new ApiError(404, 'GOAL_NOT_FOUND');
+  }
+
+  const data = {};
+  if (payload.revenueGoal !== undefined) {
+    data.revenueGoalCents = toCents(payload.revenueGoal);
+  }
+  if (payload.orderGoal !== undefined) {
+    data.orderGoal = payload.orderGoal;
+  }
+
+  const goal = await prisma.salesGoal.update({
+    where: { year_month: { year, month } },
+    data
+  });
+
+  res.json(mapSalesGoal(goal));
+}));
+
+router.delete('/goals/:year/:month', asyncHandler(async (req, res) => {
+  const year = Number(req.params.year);
+  const month = Number(req.params.month);
+
+  const existing = await prisma.salesGoal.findUnique({
+    where: { year_month: { year, month } }
+  });
+
+  if (!existing) {
+    throw new ApiError(404, 'GOAL_NOT_FOUND');
+  }
+
+  await prisma.salesGoal.delete({
+    where: { year_month: { year, month } }
+  });
+
+  res.json({ message: 'goal deleted' });
+}));
+
+router.get('/goals/stats/overview', asyncHandler(async (req, res) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const goal = await prisma.salesGoal.findUnique({
+    where: { year_month: { year, month } }
+  });
+
+  const stats = await getMonthStats(year, month);
+  const forecast = calculateForecast(year, month, stats.netRevenueCents, stats.netOrders);
+
+  const historyGoals = await prisma.salesGoal.findMany({
+    where: {
+      OR: [
+        { year: { lt: year } },
+        { year, month: { lt: month } }
+      ]
+    },
+    orderBy: [{ year: 'desc' }, { month: 'desc' }],
+    take: 12
+  });
+
+  const history = [];
+  for (const g of historyGoals) {
+    const hStats = await getMonthStats(g.year, g.month);
+    const revenuePercent = g.revenueGoalCents > 0 ? (hStats.netRevenueCents / g.revenueGoalCents) * 100 : 0;
+    const orderPercent = g.orderGoal > 0 ? (hStats.netOrders / g.orderGoal) * 100 : 0;
+    history.push({
+      ...mapSalesGoal(g),
+      netRevenue: hStats.netRevenue,
+      netOrders: hStats.netOrders,
+      revenuePercent: Math.min(999, revenuePercent),
+      orderPercent: Math.min(999, orderPercent),
+      revenueAchieved: hStats.netRevenueCents >= g.revenueGoalCents,
+      orderAchieved: hStats.netOrders >= g.orderGoal
+    });
+  }
+
+  res.json({
+    current: goal ? {
+      goal: mapSalesGoal(goal),
+      ...stats,
+      forecast,
+      revenuePercent: goal.revenueGoalCents > 0 ? (stats.netRevenueCents / goal.revenueGoalCents) * 100 : 0,
+      orderPercent: goal.orderGoal > 0 ? (stats.netOrders / goal.orderGoal) * 100 : 0,
+      hasGoal: true
+    } : {
+      goal: null,
+      ...stats,
+      forecast,
+      hasGoal: false,
+      year,
+      month
+    },
+    history
   });
 }));
 

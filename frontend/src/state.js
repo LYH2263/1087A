@@ -52,7 +52,11 @@ export const state = {
     stockThreshold: { global: { threshold: 10 }, bookThresholds: [] },
     restockLogs: [],
     restockLogStats: { total: 0, page: 1, pageSize: 20 },
-    selectedRestockBooks: new Set()
+    selectedRestockBooks: new Set(),
+    goalsOverview: null,
+    editingGoal: null,
+    goalYear: null,
+    goalMonth: null
   },
   profile: {
     editingAddress: null

@@ -421,6 +421,46 @@ export function bindEventHandlers({
       await loadAdmin();
       safeRender();
       showToast('规格已更新', 'success');
+    },
+    'create-goal': async (form) => {
+      const data = getFormData(form);
+      const year = parseInt(data.year, 10);
+      const month = parseInt(data.month, 10);
+      const revenueGoal = parseFloat(data.revenueGoal);
+      const orderGoal = parseInt(data.orderGoal, 10);
+
+      if (isNaN(year) || isNaN(month) || isNaN(revenueGoal) || isNaN(orderGoal)) {
+        throw new Error('请填写正确的目标信息');
+      }
+      if (revenueGoal <= 0 || orderGoal <= 0) {
+        throw new Error('目标值必须大于0');
+      }
+
+      await api.admin.createGoal({ year, month, revenueGoal, orderGoal });
+      closeModal();
+      await loadAdmin();
+      safeRender();
+      showToast('目标已创建', 'success');
+    },
+    'edit-goal': async (form) => {
+      const data = getFormData(form);
+      const year = parseInt(form.dataset.year, 10);
+      const month = parseInt(form.dataset.month, 10);
+      const revenueGoal = parseFloat(data.revenueGoal);
+      const orderGoal = parseInt(data.orderGoal, 10);
+
+      if (isNaN(revenueGoal) || isNaN(orderGoal)) {
+        throw new Error('请填写正确的目标信息');
+      }
+      if (revenueGoal <= 0 || orderGoal <= 0) {
+        throw new Error('目标值必须大于0');
+      }
+
+      await api.admin.updateGoal(year, month, { revenueGoal, orderGoal });
+      closeModal();
+      await loadAdmin();
+      safeRender();
+      showToast('目标已更新', 'success');
     }
   };
 
@@ -941,6 +981,75 @@ export function bindEventHandlers({
       if (currentPage < totalPages) {
         await loadMember(currentPage + 1);
       }
+    },
+    'add-goal': async (target) => {
+      const year = parseInt(target.dataset.year, 10) || new Date().getFullYear();
+      const month = parseInt(target.dataset.month, 10) || new Date().getMonth() + 1;
+      openModal(`
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">设定${year}年${month}月目标</h3>
+          <form data-form="create-goal" class="space-y-3" novalidate>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="space-y-1">
+                <label class="text-sm text-slate-600">年份</label>
+                <input class="input" name="year" type="number" min="2000" max="2100" value="${year}" required />
+              </div>
+              <div class="space-y-1">
+                <label class="text-sm text-slate-600">月份</label>
+                <input class="input" name="month" type="number" min="1" max="12" value="${month}" required />
+              </div>
+            </div>
+            <div class="space-y-1">
+              <label class="text-sm text-slate-600">销售额目标（元）</label>
+              <input class="input" name="revenueGoal" type="number" step="0.01" min="0.01" placeholder="请输入销售额目标" required />
+            </div>
+            <div class="space-y-1">
+              <label class="text-sm text-slate-600">订单量目标（单）</label>
+              <input class="input" name="orderGoal" type="number" min="1" placeholder="请输入订单量目标" required />
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+              <button type="submit" class="btn-primary">创建目标</button>
+            </div>
+          </form>
+        </div>
+      `);
+    },
+    'edit-goal': async (target) => {
+      const year = parseInt(target.dataset.year, 10);
+      const month = parseInt(target.dataset.month, 10);
+      const revenue = target.dataset.revenue || '';
+      const orders = target.dataset.orders || '';
+      openModal(`
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">编辑${year}年${month}月目标</h3>
+          <form data-form="edit-goal" data-year="${year}" data-month="${month}" class="space-y-3" novalidate>
+            <div class="space-y-1">
+              <label class="text-sm text-slate-600">销售额目标（元）</label>
+              <input class="input" name="revenueGoal" type="number" step="0.01" min="0.01" value="${revenue}" required />
+            </div>
+            <div class="space-y-1">
+              <label class="text-sm text-slate-600">订单量目标（单）</label>
+              <input class="input" name="orderGoal" type="number" min="1" value="${orders}" required />
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+              <button type="submit" class="btn-primary">保存修改</button>
+            </div>
+          </form>
+        </div>
+      `);
+    },
+    'delete-goal': async (target) => {
+      const year = parseInt(target.dataset.year, 10);
+      const month = parseInt(target.dataset.month, 10);
+      if (!confirm(`确定要删除 ${year}年${month}月 的目标吗？`)) {
+        return;
+      }
+      await api.admin.deleteGoal(year, month);
+      await loadAdmin();
+      safeRender();
+      showToast('目标已删除', 'success');
     }
   };
 

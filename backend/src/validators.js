@@ -176,6 +176,18 @@ const bookSpecUpdateSchema = z.object({
   coverUrl: z.string().optional().nullable()
 });
 
+const createSalesGoalSchema = z.object({
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+  revenueGoal: z.number().positive(),
+  orderGoal: z.number().int().positive()
+});
+
+const updateSalesGoalSchema = z.object({
+  revenueGoal: z.number().positive().optional(),
+  orderGoal: z.number().int().positive().optional()
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -199,5 +211,7 @@ module.exports = {
   createAfterSaleSchema,
   rejectAfterSaleSchema,
   bookSpecSchema,
-  bookSpecUpdateSchema
+  bookSpecUpdateSchema,
+  createSalesGoalSchema,
+  updateSalesGoalSchema
 };

@@ -571,6 +571,7 @@ export function createViewController({
         <button class="btn-outline" data-action="admin-tab" data-tab="orders">订单管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="stock">库存预警</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="restock-logs">补货流水</button>
+        <button class="btn-outline" data-action="admin-tab" data-tab="goals">目标管理</button>
       </div>
     `;
 
@@ -904,6 +905,205 @@ export function createViewController({
           ` : ''}
         </div>
       `;
+    }
+
+    if (state.admin.tab === 'goals') {
+      const overview = state.admin.goalsOverview;
+      const current = overview?.current;
+      const history = overview?.history || [];
+
+      if (state.loading.admin || !overview) {
+        content = `
+          <div class="card p-6 space-y-4">
+            <div class="animate-pulse space-y-4">
+              <div class="h-8 bg-slate-200 rounded w-1/3"></div>
+              <div class="grid md:grid-cols-2 gap-4">
+                <div class="h-32 bg-slate-200 rounded-xl"></div>
+                <div class="h-32 bg-slate-200 rounded-xl"></div>
+              </div>
+              <div class="h-8 bg-slate-200 rounded w-1/4"></div>
+              <div class="space-y-3">
+                ${Array.from({ length: 3 }).map(() => '<div class="h-20 bg-slate-200 rounded-xl"></div>').join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        const hasGoal = current?.hasGoal;
+        const goal = current?.goal;
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+
+        function renderProgressBar(percent, color = 'emerald') {
+          const clamped = Math.min(100, Math.max(0, percent));
+          const colorClass = color === 'emerald' ? 'bg-emerald-500' : color === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
+          return `
+            <div class="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+              <div class="${colorClass} h-full rounded-full transition-all duration-500" style="width: ${clamped}%"></div>
+            </div>
+          `;
+        }
+
+        function getProgressColor(percent) {
+          if (percent >= 100) return 'emerald';
+          if (percent >= 70) return 'amber';
+          return 'blue';
+        }
+
+        const currentMonthCard = hasGoal ? `
+          <div class="card p-6 space-y-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 class="text-lg font-semibold">${currentYear}年${currentMonth}月 目标</h3>
+                <p class="text-sm text-slate-500">实时追踪目标完成进度</p>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn-outline" data-action="edit-goal" data-year="${goal.year}" data-month="${goal.month}" data-revenue="${goal.revenueGoal}" data-orders="${goal.orderGoal}">编辑目标</button>
+                <button class="btn-outline text-red-600 border-red-200 hover:border-red-400" data-action="delete-goal" data-year="${goal.year}" data-month="${goal.month}">删除</button>
+              </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-6">
+              <div class="space-y-3">
+                <div class="flex justify-between items-baseline">
+                  <span class="text-sm text-slate-500">销售额目标</span>
+                  <span class="font-semibold">${formatCurrency(goal.revenueGoal)}</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                  <span class="text-sm text-slate-500">已完成</span>
+                  <span class="text-xl font-bold ${current.revenuePercent >= 100 ? 'text-emerald-600' : 'text-slate-800'}">${formatCurrency(current.netRevenue)}</span>
+                </div>
+                ${renderProgressBar(current.revenuePercent, getProgressColor(current.revenuePercent))}
+                <div class="flex justify-between text-sm">
+                  <span class="text-slate-500">完成度：${current.revenuePercent.toFixed(1)}%</span>
+                  ${current.forecast?.forecastRevenue !== null ? `
+                    <span class="text-slate-500">
+                      预计月末：<span class="font-medium ${current.forecast.forecastRevenue >= goal.revenueGoal ? 'text-emerald-600' : 'text-amber-600'}">${formatCurrency(current.forecast.forecastRevenue)}</span>
+                    </span>
+                  ` : ''}
+                </div>
+                ${current.forecast?.daysPassed !== null ? `
+                  <p class="text-xs text-slate-400">本月已过 ${current.forecast.daysPassed} / ${current.forecast.daysTotal} 天（${(current.forecast.progress * 100).toFixed(0)}%）</p>
+                ` : ''}
+              </div>
+
+              <div class="space-y-3">
+                <div class="flex justify-between items-baseline">
+                  <span class="text-sm text-slate-500">订单量目标</span>
+                  <span class="font-semibold">${goal.orderGoal} 单</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                  <span class="text-sm text-slate-500">已完成</span>
+                  <span class="text-xl font-bold ${current.orderPercent >= 100 ? 'text-emerald-600' : 'text-slate-800'}">${current.netOrders} 单</span>
+                </div>
+                ${renderProgressBar(current.orderPercent, getProgressColor(current.orderPercent))}
+                <div class="flex justify-between text-sm">
+                  <span class="text-slate-500">完成度：${current.orderPercent.toFixed(1)}%</span>
+                  ${current.forecast?.forecastOrders !== null ? `
+                    <span class="text-slate-500">
+                      预计月末：<span class="font-medium ${current.forecast.forecastOrders >= goal.orderGoal ? 'text-emerald-600' : 'text-amber-600'}">${current.forecast.forecastOrders} 单</span>
+                    </span>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+
+            ${current.refundOrders > 0 ? `
+              <div class="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+                <h4 class="font-medium text-red-700">退款影响</h4>
+                <div class="grid md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span class="text-slate-500">退款订单：</span>
+                    <span class="font-medium text-red-600">${current.refundOrders} 单</span>
+                  </div>
+                  <div>
+                    <span class="text-slate-500">退款金额：</span>
+                    <span class="font-medium text-red-600">-${formatCurrency(current.refundRevenue)}</span>
+                  </div>
+                </div>
+                <p class="text-xs text-slate-500">已从完成额中扣除退款金额</p>
+              </div>
+            ` : ''}
+          </div>
+        ` : `
+          <div class="card p-12 text-center space-y-4">
+            <div class="text-5xl">🎯</div>
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700">${currentYear}年${currentMonth}月 暂无目标</h3>
+              <p class="text-sm text-slate-500 mt-2">设置销售目标，实时追踪完成进度</p>
+            </div>
+            <button class="btn-primary" data-action="add-goal" data-year="${currentYear}" data-month="${currentMonth}">
+              设定本月目标
+            </button>
+            <div class="text-sm text-slate-400 pt-4 border-t border-slate-100">
+              <p>本月实际销售额：${formatCurrency(current.netRevenue)}</p>
+              <p>本月实际订单：${current.netOrders} 单</p>
+            </div>
+          </div>
+        `;
+
+        const historySection = history.length > 0 ? `
+          <div class="card p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 class="text-lg font-semibold">历史目标达成</h3>
+                <p class="text-sm text-slate-500">最近 12 个月的目标完成情况</p>
+              </div>
+            </div>
+            <div class="space-y-3">
+              ${history.map(item => {
+                const revenueColor = item.revenuePercent >= 100 ? 'text-emerald-600' : item.revenuePercent >= 70 ? 'text-amber-600' : 'text-slate-600';
+                const orderColor = item.orderPercent >= 100 ? 'text-emerald-600' : item.orderPercent >= 70 ? 'text-amber-600' : 'text-slate-600';
+                return `
+                  <div class="border border-slate-200 rounded-xl p-4 hover-card">
+                    <div class="flex flex-wrap items-center justify-between gap-4 mb-3">
+                      <div>
+                        <h4 class="font-semibold">${item.year}年${item.month}月</h4>
+                        <p class="text-xs text-slate-500">
+                          目标：${formatCurrency(item.revenueGoal)} / ${item.orderGoal} 单
+                        </p>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        ${item.revenueAchieved ? '<span class="badge bg-emerald-500 text-white">销售额达标</span>' : ''}
+                        ${item.orderAchieved ? '<span class="badge bg-blue-500 text-white">订单量达标</span>' : ''}
+                        <button class="btn-outline text-sm" data-action="edit-goal" data-year="${item.year}" data-month="${item.month}" data-revenue="${item.revenueGoal}" data-orders="${item.orderGoal}">编辑</button>
+                      </div>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-4">
+                      <div class="space-y-2">
+                        <div class="flex justify-between text-sm">
+                          <span class="text-slate-500">销售额</span>
+                          <span class="${revenueColor} font-medium">${formatCurrency(item.netRevenue)} / ${formatCurrency(item.revenueGoal)}</span>
+                        </div>
+                        ${renderProgressBar(item.revenuePercent, item.revenuePercent >= 100 ? 'emerald' : item.revenuePercent >= 70 ? 'amber' : 'blue')}
+                        <p class="text-xs text-right text-slate-500">完成 ${item.revenuePercent.toFixed(1)}%</p>
+                      </div>
+                      <div class="space-y-2">
+                        <div class="flex justify-between text-sm">
+                          <span class="text-slate-500">订单量</span>
+                          <span class="${orderColor} font-medium">${item.netOrders} / ${item.orderGoal} 单</span>
+                        </div>
+                        ${renderProgressBar(item.orderPercent, item.orderPercent >= 100 ? 'emerald' : item.orderPercent >= 70 ? 'amber' : 'blue')}
+                        <p class="text-xs text-right text-slate-500">完成 ${item.orderPercent.toFixed(1)}%</p>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : `
+          <div class="card p-8 text-center">
+            <p class="text-slate-500">暂无历史目标记录</p>
+          </div>
+        `;
+
+        content = `
+          ${currentMonthCard}
+          ${historySection}
+        `;
+      }
     }
 
     viewContent.innerHTML = `${adminTabs}${content}`;

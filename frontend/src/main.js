@@ -193,14 +193,15 @@ async function loadMember(page = 1) {
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
-  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs] = await Promise.all([
+  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview] = await Promise.all([
     api.admin.getBooks(),
     api.admin.getCategories(),
     api.admin.getOrders(),
     api.admin.getOrderStats(),
     api.admin.getStockThreshold(),
     api.admin.getStockWarnings(),
-    api.admin.getRestockLogs({ page: 1, pageSize: 20 })
+    api.admin.getRestockLogs({ page: 1, pageSize: 20 }),
+    api.admin.getGoalsOverview()
   ]);
   state.admin.books = books;
   state.admin.categories = categories;
@@ -211,6 +212,7 @@ async function loadAdmin() {
   state.admin.stockWarningStats = { total: stockWarnings.total, zeroStockCount: stockWarnings.zeroStockCount };
   state.admin.restockLogs = restockLogs.logs;
   state.admin.restockLogStats = { total: restockLogs.total, page: restockLogs.page, pageSize: restockLogs.pageSize };
+  state.admin.goalsOverview = goalsOverview;
   state.loading.admin = false;
 }
 

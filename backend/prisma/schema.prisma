@@ -412,3 +412,17 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, isRead])
 }
+
+model SalesGoal {
+  id              String   @id @default(cuid())
+  year            Int
+  month           Int
+  revenueGoalCents Int
+  orderGoal       Int
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([year, month])
+  @@index([year, month])
+}

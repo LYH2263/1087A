@@ -414,6 +414,33 @@ export const api = {
     },
     deleteBookSpec(bookId, specId) {
       return request(`/admin/books/${bookId}/specs/${specId}`, { method: 'DELETE' });
+    },
+    getGoals(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      return request(`/admin/goals${query ? `?${query}` : ''}`);
+    },
+    getGoal(year, month) {
+      return request(`/admin/goals/${year}/${month}`);
+    },
+    createGoal(payload) {
+      return request('/admin/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    updateGoal(year, month, payload) {
+      return request(`/admin/goals/${year}/${month}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    deleteGoal(year, month) {
+      return request(`/admin/goals/${year}/${month}`, { method: 'DELETE' });
+    },
+    getGoalsOverview() {
+      return request('/admin/goals/stats/overview');
     }
   },
   getNotifications(params = {}) {
