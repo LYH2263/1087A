@@ -9,6 +9,10 @@ const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, update
 const { toCents, fromCents } = require('../utils/money');
 const { generateCouponCode } = require('../utils/coupon');
 const { createOrderNotification } = require('../utils/notification');
+const {
+  calculateEarnedPoints,
+  calculateLevelByPoints
+} = require('../utils/member');
 
 const router = express.Router();
 
@@ -463,9 +467,11 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
     include: { items: true }
   });
 
-  if (!order || !['PAID', 'SHIPPED'].includes(order.status)) {
+  if (!order || !['PAID', 'SHIPPED', 'COMPLETED'].includes(order.status)) {
     throw new ApiError(400, 'ORDER_NOT_REFUNDABLE');
   }
+
+  const refundedPoints = calculateEarnedPoints(order.totalCents);
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.order.update({
@@ -508,6 +514,50 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
       }
     }
 
+    if (refundedPoints > 0) {
+      const profile = await tx.memberProfile.findUnique({
+        where: { userId: order.userId },
+        select: { id: true, totalPoints: true, availablePoints: true, totalSpentCents: true }
+      });
+
+      if (profile) {
+        const existingRefundLog = await tx.pointLog.findUnique({
+          where: { orderId_source: { orderId: order.id, source: 'ORDER_REFUND' } }
+        });
+
+        if (!existingRefundLog) {
+          const balanceBefore = profile.totalPoints;
+          const balanceAfter = Math.max(0, balanceBefore - refundedPoints);
+          const newLevel = calculateLevelByPoints(balanceAfter);
+          const availableDeduct = Math.min(profile.availablePoints, refundedPoints);
+          const spentDeduct = Math.min(profile.totalSpentCents, order.totalCents);
+
+          await tx.pointLog.create({
+            data: {
+              userId: order.userId,
+              profileId: profile.id,
+              source: 'ORDER_REFUND',
+              points: -refundedPoints,
+              balanceBefore,
+              balanceAfter,
+              orderId: order.id,
+              remark: `订单退款，扣回${refundedPoints}积分`
+            }
+          });
+
+          await tx.memberProfile.update({
+            where: { id: profile.id },
+            data: {
+              totalPoints: balanceAfter,
+              availablePoints: { decrement: availableDeduct },
+              totalSpentCents: { decrement: spentDeduct },
+              level: newLevel
+            }
+          });
+        }
+      }
+    }
+
     return await tx.order.findUnique({
       where: { id: order.id }
     });
@@ -515,7 +565,10 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
 
   await createOrderNotification(order.userId, 'ORDER_REFUNDED', updated);
 
-  res.json({ message: 'order refunded' });
+  res.json({
+    message: 'order refunded',
+    refundedPoints
+  });
 }));
 
 function mapCoupon(coupon) {
@@ -1131,10 +1184,59 @@ router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'AFTERSALE_NOT_PROCESSING', { currentStatus: afterSale.status });
   }
 
-  await prisma.afterSale.update({
-    where: { id: afterSale.id },
-    data: {
-      status: 'COMPLETED'
+  const refundedPoints = calculateEarnedPoints(afterSale.totalAmountCents);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.afterSale.update({
+      where: { id: afterSale.id },
+      data: {
+        status: 'COMPLETED'
+      }
+    });
+
+    if (afterSale.type === 'RETURN' && refundedPoints > 0) {
+      const profile = await tx.memberProfile.findUnique({
+        where: { userId: afterSale.userId },
+        select: { id: true, totalPoints: true, availablePoints: true, totalSpentCents: true }
+      });
+
+      if (profile) {
+        const existingRefundLog = await tx.pointLog.findUnique({
+          where: { afterSaleId_source: { afterSaleId: afterSale.id, source: 'AFTER_SALE_REFUND' } }
+        });
+
+        if (!existingRefundLog) {
+          const balanceBefore = profile.totalPoints;
+          const balanceAfter = Math.max(0, balanceBefore - refundedPoints);
+          const newLevel = calculateLevelByPoints(balanceAfter);
+          const availableDeduct = Math.min(profile.availablePoints, refundedPoints);
+          const spentDeduct = Math.min(profile.totalSpentCents, afterSale.totalAmountCents);
+
+          await tx.pointLog.create({
+            data: {
+              userId: afterSale.userId,
+              profileId: profile.id,
+              source: 'AFTER_SALE_REFUND',
+              points: -refundedPoints,
+              balanceBefore,
+              balanceAfter,
+              afterSaleId: afterSale.id,
+              orderId: afterSale.orderId,
+              remark: `售后退款完成，扣回${refundedPoints}积分`
+            }
+          });
+
+          await tx.memberProfile.update({
+            where: { id: profile.id },
+            data: {
+              totalPoints: balanceAfter,
+              availablePoints: { decrement: availableDeduct },
+              totalSpentCents: { decrement: spentDeduct },
+              level: newLevel
+            }
+          });
+        }
+      }
     }
   });
 
@@ -1143,7 +1245,10 @@ router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
     include: { items: true, user: true, order: true }
   });
 
-  res.json(mapAdminAfterSale(updated));
+  res.json({
+    ...mapAdminAfterSale(updated),
+    refundedPoints
+  });
 }));
 
 module.exports = router;

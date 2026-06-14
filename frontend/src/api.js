@@ -437,5 +437,18 @@ export const api = {
     return request(`/notifications/${notificationId}`, {
       method: 'DELETE'
     });
+  },
+  getMemberProfile() {
+    return request('/member/profile');
+  },
+  getMemberPointLogs(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/member/point-logs${query ? `?${query}` : ''}`);
+  },
+  getMemberLevels() {
+    return request('/member/levels');
+  },
+  getMemberPreview(subtotal) {
+    return request(`/member/preview?subtotal=${Math.round(Number(subtotal) * 100)}`);
   }
 };

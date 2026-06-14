@@ -101,14 +101,19 @@ const originalViewController = createViewController({
 });
 
 function updateAuthUI() {
-  originalViewController.updateAuthUI();
-  updateNotificationUI();
-  if (state.user) {
-    startUnreadPolling();
-  } else {
-    stopUnreadPolling();
+    originalViewController.updateAuthUI();
+    updateNotificationUI();
+    if (state.user) {
+      startUnreadPolling();
+    } else {
+      stopUnreadPolling();
+    }
+    if (state.user && state.user.member) {
+      userChip.textContent = `${state.user.username} · ${state.user.member.levelIcon}${state.user.member.levelName} · ${state.user.role === 'ADMIN' ? '管理员' : '用户'}`;
+    } else if (state.user) {
+      userChip.textContent = `${state.user.username} · ${state.user.role === 'ADMIN' ? '管理员' : '用户'}`;
+    }
   }
-}
 
 const { safeRender } = originalViewController;
 
@@ -160,6 +165,29 @@ async function loadOrders() {
 async function loadAddresses() {
   if (!state.user) return;
   state.addresses = await api.getAddresses();
+}
+
+async function loadMember(page = 1) {
+  if (!state.user) return;
+  state.loading.member = true;
+  safeRender();
+  const [profile, logs, levels] = await Promise.all([
+    api.getMemberProfile(),
+    api.getMemberPointLogs({ page, pageSize: state.member.pointLogs.pageSize }),
+    api.getMemberLevels()
+  ]);
+  state.member.profile = profile;
+  state.member.pointLogs = {
+    list: logs.logs,
+    total: logs.total,
+    page: logs.page,
+    pageSize: logs.pageSize,
+    totalEarned: logs.totalEarned,
+    totalSpent: logs.totalSpent
+  };
+  state.member.levels = levels;
+  state.loading.member = false;
+  safeRender();
 }
 
 async function loadAdmin() {
@@ -247,6 +275,7 @@ const viewLoaders = {
   },
   wishlist: loadWishlist,
   orders: loadOrders,
+  member: () => loadMember(1),
   notifications: () => loadNotifications(1),
   profile: loadAddresses,
   admin: loadAdmin
@@ -384,7 +413,8 @@ bindEventHandlers({
   openRegisterModal,
   openForgotModal,
   openResetModal,
-  escapeHtmlAttr
+  escapeHtmlAttr,
+  loadMember
 });
 
 let unreadPollInterval = null;

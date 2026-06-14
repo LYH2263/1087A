@@ -221,25 +221,71 @@ export function createViewController({
       return;
     }
 
-    const total = state.cart.reduce((sum, item) => sum + item.book.price * item.quantity, 0);
+    const subtotal = state.cart.reduce((sum, item) => {
+      let price = item.book.price;
+      if (item.specPrice !== undefined) {
+        price = item.specPrice;
+      }
+      return sum + price * item.quantity;
+    }, 0);
+
+    const member = state.user?.member || null;
+    let memberDiscount = 0;
+    let shippingFee = 10;
+    let estimatedPoints = 0;
+    let discountRate = 1;
+    let levelName = null;
+    let levelIcon = null;
+
+    if (member) {
+      discountRate = member.discountRate || 1;
+      levelName = member.levelName;
+      levelIcon = member.levelIcon;
+      memberDiscount = subtotal - Math.floor(subtotal * discountRate * 100) / 100;
+      memberDiscount = Math.round(memberDiscount * 100) / 100;
+      const afterDiscount = subtotal - memberDiscount;
+      estimatedPoints = Math.floor(afterDiscount);
+      if (member.freeShipping) {
+        shippingFee = 0;
+      } else if (member.freeShippingThreshold && afterDiscount * 100 >= member.freeShippingThreshold) {
+        shippingFee = 0;
+      } else if (afterDiscount >= 99) {
+        shippingFee = 0;
+      }
+    } else {
+      estimatedPoints = Math.floor(subtotal - memberDiscount);
+      if (subtotal >= 99) {
+        shippingFee = 0;
+      }
+    }
+
+    const total = Math.max(0, subtotal - memberDiscount) + shippingFee;
 
     const cartList = state.cart
       .map(
-        (item) => `
+        (item) => {
+          let price = item.book.price;
+          let hasSpec = false;
+          if (item.specPrice !== undefined) {
+            price = item.specPrice;
+            hasSpec = true;
+          }
+          return `
       <div class="flex flex-col md:flex-row md:items-center gap-4 border-b border-slate-200 pb-4">
         <img src="${item.book.coverUrl}" alt="${item.book.title}" class="w-24 h-24 object-contain rounded-xl bg-white" />
         <div class="flex-1">
           <h3 class="font-semibold">${item.book.title}</h3>
           <p class="text-sm text-slate-500">${item.book.author}</p>
-          ${item.specName ? `<p class="text-sm text-teal-700">规格：${item.specName}</p>` : ''}
-          <p class="text-sm text-slate-500">单价 ${formatCurrency(item.book.price)}</p>
+          ${hasSpec ? `<p class="text-sm text-teal-700">规格：${item.specName}</p>` : ''}
+          <p class="text-sm text-slate-500">单价 ${formatCurrency(price)}</p>
         </div>
         <div class="flex items-center gap-3">
           <input class="input w-20" type="number" min="1" value="${item.quantity}" data-action="update-qty" data-id="${item.id}" />
           <button class="btn-outline" data-action="remove-cart" data-id="${item.id}">删除</button>
         </div>
       </div>
-    `
+    `;
+        }
       )
       .join('');
 
@@ -256,14 +302,55 @@ export function createViewController({
     viewContent.innerHTML = `
       <div class="card p-6 space-y-4">
         ${state.cart.length === 0 ? '<p class="text-slate-500">购物车为空</p>' : cartList}
-        ${state.cart.length > 0 ? `<div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="text-lg font-semibold">合计 ${formatCurrency(total)}</p>
-          <div class="flex gap-2">
-            <button class="btn-outline" data-action="clear-cart">清空购物车</button>
+        ${state.cart.length > 0 ? `
+        <div class="border-t border-slate-200 pt-4 space-y-2">
+          <div class="grid md:grid-cols-2 gap-3">
+            <div class="bg-slate-50 rounded-xl p-3">
+              <p class="text-xs text-slate-400">商品小计</p>
+              <p class="text-lg font-semibold">${formatCurrency(subtotal)}</p>
+            </div>
+            ${member ? `
+              <div class="bg-gradient-to-r from-teal-50 to-white rounded-xl p-3 border border-teal-100">
+                <p class="text-xs text-teal-500">
+                  ${levelIcon || ''} ${levelName || '会员'}权益
+                </p>
+                <p class="text-lg font-semibold text-teal-700">
+                  ${(discountRate * 10).toFixed(1)} 折优惠
+                </p>
+              </div>
+            ` : `
+              <div class="bg-slate-50 rounded-xl p-3">
+                <p class="text-xs text-slate-400">登录享权益</p>
+                <p class="text-sm text-slate-600">登录查看会员折扣</p>
+              </div>
+            `}
           </div>
-        </div>` : ''}
+          <div class="flex flex-wrap items-center justify-between gap-3 text-sm md:text-base">
+            <div class="space-y-1">
+              ${memberDiscount > 0 ? `<p class="text-teal-600">会员折扣 -${formatCurrency(memberDiscount)}</p>` : ''}
+              <p class="${shippingFee === 0 ? 'text-emerald-600' : 'text-slate-600'}">
+                运费：${shippingFee === 0 ? '包邮 🎉' : formatCurrency(shippingFee)}
+              </p>
+              <p class="text-slate-500">预计获得积分：<span class="font-semibold text-amber-600">${estimatedPoints}</span> 分</p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs text-slate-400">应付总额</p>
+              <p class="text-2xl font-bold text-slate-800">${formatCurrency(total)}</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-slate-500">
+              ${member && member.progress?.nextLevel ? `再消费 ${formatCurrency(Math.max(0, member.progress.remainingPoints) * 100)} 即可升级为 ${member.progress.nextLevel === 'SILVER' ? '银卡' : member.progress.nextLevel === 'GOLD' ? '金卡' : '更高等级'}会员！` : ''}
+            </p>
+            <div class="flex gap-2">
+              <button class="btn-outline" data-action="clear-cart">清空购物车</button>
+            </div>
+          </div>
+        </div>
+        ` : ''}
       </div>
 
+      ${state.cart.length > 0 ? `
       <div class="card p-6 space-y-4">
         <h3 class="text-lg font-semibold">订单确认</h3>
         <form data-form="checkout" class="space-y-3" novalidate>
@@ -289,6 +376,7 @@ export function createViewController({
           </div>
         </form>
       </div>
+      ` : ''}
     `;
   }
 
@@ -312,7 +400,9 @@ export function createViewController({
 
     viewContent.innerHTML = state.orders
       .map(
-        (order) => `
+        (order) => {
+          const estimatedPoints = order.estimatedPoints || Math.floor(order.total);
+          return `
         <div class="card p-6 space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -324,6 +414,25 @@ export function createViewController({
               <p class="text-lg font-semibold">${formatCurrency(order.total)}</p>
             </div>
           </div>
+          ${order.memberDiscount > 0 || order.shippingFee > 0 ? `
+          <div class="flex flex-wrap gap-4 text-sm bg-slate-50 rounded-lg p-3">
+            <p class="text-slate-500">商品金额：${formatCurrency(order.subtotal)}</p>
+            ${order.memberDiscount > 0 ? `<p class="text-teal-600">会员折扣：-${formatCurrency(order.memberDiscount)}</p>` : ''}
+            ${order.discount > order.memberDiscount ? `<p class="text-teal-600">优惠：-${formatCurrency(Number(order.discount) - Number(order.memberDiscount))}</p>` : ''}
+            <p class="text-slate-500">运费：${formatCurrency(order.shippingFee || 0)}</p>
+          </div>
+          ` : ''}
+          ${order.status === 'COMPLETED' ? `
+            <div class="flex items-center gap-2 text-sm bg-amber-50 rounded-lg p-3 text-amber-700">
+              <span>✨</span>
+              <span>本订单已获得 <span class="font-semibold">${estimatedPoints}</span> 积分奖励</span>
+            </div>
+          ` : order.status === 'SHIPPED' ? `
+            <div class="flex items-center gap-2 text-sm bg-emerald-50 rounded-lg p-3 text-emerald-700">
+              <span>🎁</span>
+              <span>确认收货后将获得 <span class="font-semibold">${estimatedPoints}</span> 积分奖励</span>
+            </div>
+          ` : ''}
           <div class="space-y-3">
             ${order.items
               .map(
@@ -343,12 +452,13 @@ export function createViewController({
           <div class="flex flex-wrap gap-2">
             ${order.status === 'PENDING_PAYMENT' ? `<button class="btn-primary" data-action="pay-order" data-id="${order.id}">立即支付（模拟）</button>` : ''}
             ${order.status === 'PENDING_PAYMENT' ? `<button class="btn-outline" data-action="cancel-order" data-id="${order.id}">取消订单</button>` : ''}
-            ${order.status === 'SHIPPED' ? `<button class="btn-primary" data-action="confirm-order" data-id="${order.id}">确认收货</button>` : ''}
+            ${order.status === 'SHIPPED' ? `<button class="btn-primary" data-action="confirm-order" data-id="${order.id}" data-points="${estimatedPoints}">确认收货（+${estimatedPoints}积分）</button>` : ''}
             ${order.status === 'COMPLETED' && !order.reviewText ? `<button class="btn-outline" data-action="review-order" data-id="${order.id}">评价订单</button>` : ''}
             ${order.reviewText ? `<span class="badge">已评价 ${order.rating}⭐</span>` : ''}
           </div>
         </div>
-      `
+      `;
+        }
       )
       .join('');
   }
@@ -975,11 +1085,170 @@ export function createViewController({
     `;
   }
 
+  function renderMember() {
+    viewTitle.innerHTML = `
+      <div>
+        <h2 class="text-xl font-semibold">我的会员</h2>
+        <p class="text-sm text-slate-500">查看会员等级、积分与成长进度</p>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后查看会员信息。</div>`;
+      return;
+    }
+
+    if (state.loading.member) {
+      viewContent.innerHTML = renderSkeleton();
+      return;
+    }
+
+    const profile = state.member.profile;
+    const logs = state.member.pointLogs;
+    const levels = state.member.levels;
+
+    if (!profile) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">加载会员信息失败，请刷新重试。</div>`;
+      return;
+    }
+
+    const levelCards = levels.map((lv) => {
+      const isCurrent = lv.level === profile.level;
+      const isAchieved = levels.findIndex(l => l.level === profile.level) >= levels.findIndex(l => l.level === lv.level);
+      return `
+        <div class="rounded-xl p-4 border-2 transition ${isCurrent ? 'border-teal-500 bg-teal-50' : isAchieved ? 'border-slate-300 bg-slate-50' : 'border-slate-200 bg-white opacity-60'}">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-2xl">${lv.icon}</span>
+            <h4 class="font-semibold" style="color: ${isCurrent ? lv.color : 'inherit'}">${lv.name}</h4>
+            ${isCurrent ? '<span class="badge bg-teal-500 text-white">当前等级</span>' : ''}
+          </div>
+          <p class="text-xs text-slate-500 mb-2">需 ${lv.minPoints} 积分</p>
+          <div class="space-y-1 text-sm">
+            <p>折扣：<span class="font-semibold">${(lv.discountRate * 10).toFixed(1)} 折</span></p>
+            <p>包邮：<span class="font-semibold">${lv.freeShipping ? '全场包邮' : lv.freeShippingThresholdCents ? `满 ¥${(lv.freeShippingThresholdCents / 100).toFixed(2)} 包邮` : '无特殊权益'}</span></p>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const progress = profile.progress || {};
+    const progressPercent = progress.progress || 100;
+
+    const logItems = logs.list.map((log) => {
+      const isEarn = log.points > 0;
+      return `
+        <div class="flex items-center justify-between py-3 border-b border-slate-100 last:border-b-0">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center text-xl ${isEarn ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}">
+              ${isEarn ? '+' : '-'}
+            </div>
+            <div>
+              <p class="font-medium text-sm">${log.remark || log.sourceText}</p>
+              <p class="text-xs text-slate-400">${new Date(log.createdAt).toLocaleString('zh-CN')}</p>
+              ${log.orderId ? `<p class="text-xs text-slate-400">订单号：${log.orderId}</p>` : ''}
+            </div>
+          </div>
+          <p class="text-lg font-semibold ${isEarn ? 'text-emerald-600' : 'text-amber-600'}">
+            ${isEarn ? '+' : ''}${log.points}
+          </p>
+        </div>
+      `;
+    }).join('');
+
+    const logTotalPages = Math.ceil(logs.total / logs.pageSize);
+
+    viewContent.innerHTML = `
+      <div class="card p-6" style="background: linear-gradient(135deg, ${profile.levelColor}22 0%, #ffffff 100%); border: 2px solid ${profile.levelColor}44;">
+        <div class="flex flex-col md:flex-row md:items-center gap-6">
+          <div class="w-24 h-24 rounded-full flex items-center justify-center text-6xl bg-white shadow-md" style="box-shadow: 0 0 0 4px ${profile.levelColor}44;">
+            ${profile.levelIcon}
+          </div>
+          <div class="flex-1 space-y-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <h3 class="text-2xl font-bold" style="color: ${profile.levelColor}">${profile.levelName}</h3>
+              <span class="badge" style="background: ${profile.levelColor}; color: white;">Lv.${levels.findIndex(l => l.level === profile.level) + 1}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="bg-white rounded-lg p-3">
+                <p class="text-xs text-slate-500">累计积分</p>
+                <p class="text-xl font-bold text-slate-800">${profile.totalPoints}</p>
+              </div>
+              <div class="bg-white rounded-lg p-3">
+                <p class="text-xs text-slate-500">可用积分</p>
+                <p class="text-xl font-bold text-emerald-600">${profile.availablePoints}</p>
+              </div>
+              <div class="bg-white rounded-lg p-3">
+                <p class="text-xs text-slate-500">累计消费</p>
+                <p class="text-xl font-bold text-slate-800">¥${(profile.totalSpentCents / 100).toFixed(2)}</p>
+              </div>
+              <div class="bg-white rounded-lg p-3">
+                <p class="text-xs text-slate-500">会员折扣</p>
+                <p class="text-xl font-bold" style="color: ${profile.levelColor}">${(profile.discountRate * 10).toFixed(1)} 折</p>
+              </div>
+            </div>
+            ${progress.nextLevel ? `
+              <div class="space-y-2">
+                <div class="flex justify-between text-sm">
+                  <span class="text-slate-600">距离 <span class="font-semibold">${levels.find(l => l.level === progress.nextLevel)?.name || '下一等级'}</span> 还差 <span class="font-semibold" style="color: ${profile.levelColor}">${progress.remainingPoints}</span> 积分</span>
+                  <span class="text-slate-500">${progress.currentPoints} / ${progress.requiredPoints}</span>
+                </div>
+                <div class="h-3 bg-slate-200 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all" style="width: ${progressPercent}%; background: linear-gradient(90deg, ${profile.levelColor} 0%, ${profile.levelColor}cc 100%);"></div>
+                </div>
+              </div>
+            ` : `
+              <div class="flex items-center gap-2 text-sm text-slate-600">
+                <span class="text-lg">🎊</span>
+                <span>恭喜您已达到最高等级，感谢您的支持！</span>
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-6 space-y-4">
+        <h3 class="text-lg font-semibold">等级权益</h3>
+        <div class="grid md:grid-cols-3 gap-4">
+          ${levelCards}
+        </div>
+      </div>
+
+      <div class="card p-6 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h3 class="text-lg font-semibold">积分明细</h3>
+          <div class="flex gap-3 text-sm">
+            <span class="badge bg-emerald-100 text-emerald-700">累计获得 ${logs.totalEarned}</span>
+            <span class="badge bg-amber-100 text-amber-700">累计扣除 ${logs.totalSpent}</span>
+          </div>
+        </div>
+        ${logs.list.length === 0 ? `
+          <div class="text-center py-12 text-slate-500">
+            <div class="text-5xl mb-3">📝</div>
+            <p>暂无积分记录</p>
+            <p class="text-sm mt-1">完成订单后将获得积分奖励</p>
+          </div>
+        ` : `
+          <div class="divide-y divide-slate-100">
+            ${logItems}
+          </div>
+        `}
+        ${logTotalPages > 1 ? `
+          <div class="flex justify-center gap-2 pt-4 border-t border-slate-100">
+            <button class="btn-outline" data-action="member-log-prev" ${logs.page <= 1 ? 'disabled' : ''}>上一页</button>
+            <span class="px-3 py-2 text-sm text-slate-600">第 ${logs.page} / ${logTotalPages} 页</span>
+            <button class="btn-outline" data-action="member-log-next" ${logs.page >= logTotalPages ? 'disabled' : ''}>下一页</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   const viewRenderers = {
     books: renderBooks,
     cart: renderCart,
     wishlist: renderWishlist,
     orders: renderOrders,
+    member: renderMember,
     notifications: renderNotifications,
     profile: renderProfile,
     admin: renderAdmin

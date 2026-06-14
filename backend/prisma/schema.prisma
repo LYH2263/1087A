@@ -81,6 +81,52 @@ enum NotificationType {
   ORDER_REFUNDED
 }
 
+enum MemberLevel {
+  NORMAL
+  SILVER
+  GOLD
+}
+
+enum PointSource {
+  ORDER_EARN
+  ORDER_REFUND
+  AFTER_SALE_REFUND
+  ADMIN_ADJUST
+}
+
+model MemberProfile {
+  id              String      @id @default(cuid())
+  userId          String      @unique
+  level           MemberLevel @default(NORMAL)
+  totalPoints     Int         @default(0)
+  availablePoints Int         @default(0)
+  spentPoints     Int         @default(0)
+  totalSpentCents Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  user            User        @relation(fields: [userId], references: [id])
+  pointLogs       PointLog[]
+}
+
+model PointLog {
+  id             String      @id @default(cuid())
+  userId         String
+  profileId      String
+  source         PointSource
+  points         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  orderId        String?
+  afterSaleId    String?
+  remark         String?
+  createdAt      DateTime    @default(now())
+  profile        MemberProfile @relation(fields: [profileId], references: [id])
+
+  @@unique([orderId, source])
+  @@unique([afterSaleId, source])
+  @@index([userId, createdAt])
+}
+
 model User {
   id              String          @id @default(cuid())
   username        String          @unique
@@ -99,6 +145,7 @@ model User {
   userCoupons     UserCoupon[]
   afterSales      AfterSale[]
   notifications   Notification[]
+  memberProfile   MemberProfile?
 }
 
 model Session {
@@ -208,31 +255,33 @@ model Address {
 }
 
 model Order {
-  id            String       @id @default(cuid())
-  userId        String
-  status        OrderStatus  @default(PENDING_PAYMENT)
-  paymentMethod PaymentMethod
-  subtotalCents Int
-  discountCents Int          @default(0)
-  totalCents    Int
-  couponCode    String?
-  userCouponId  String?
-  recipient     String
-  phone         String
-  line1         String
-  city          String
-  state         String
-  postalCode    String
-  rating        Int?
-  reviewText    String?
-  reviewedAt    DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  user          User         @relation(fields: [userId], references: [id])
-  items         OrderItem[]
-  userCoupon    UserCoupon?  @relation(fields: [userCouponId], references: [id])
-  afterSales    AfterSale[]
-  notifications Notification[]
+  id                  String       @id @default(cuid())
+  userId              String
+  status              OrderStatus  @default(PENDING_PAYMENT)
+  paymentMethod       PaymentMethod
+  subtotalCents       Int
+  discountCents       Int          @default(0)
+  memberDiscountCents Int          @default(0)
+  shippingFeeCents    Int          @default(0)
+  totalCents          Int
+  couponCode          String?
+  userCouponId        String?
+  recipient           String
+  phone               String
+  line1               String
+  city                String
+  state               String
+  postalCode          String
+  rating              Int?
+  reviewText          String?
+  reviewedAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  user                User         @relation(fields: [userId], references: [id])
+  items               OrderItem[]
+  userCoupon          UserCoupon?  @relation(fields: [userCouponId], references: [id])
+  afterSales          AfterSale[]
+  notifications       Notification[]
 }
 
 model OrderItem {

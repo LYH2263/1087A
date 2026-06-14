@@ -6,10 +6,20 @@ const { checkoutSchema, reviewSchema } = require('../validators');
 const { fromCents } = require('../utils/money');
 const { calculateDiscount, isCouponExpired } = require('../utils/coupon');
 const { createOrderNotification } = require('../utils/notification');
+const {
+  getLevelConfig,
+  calculateEarnedPoints,
+  calculateLevelByPoints,
+  calculateMemberDiscount,
+  calculateShippingFee,
+  SHIPPING_FEE_CENTS,
+  DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS
+} = require('../utils/member');
 
 const router = express.Router();
 
 function mapOrder(order) {
+  const estimatedPoints = calculateEarnedPoints(order.totalCents);
   return {
     id: order.id,
     status: order.status,
@@ -17,6 +27,9 @@ function mapOrder(order) {
     subtotal: fromCents(order.subtotalCents),
     discount: fromCents(order.discountCents),
     total: fromCents(order.totalCents),
+    memberDiscount: fromCents(order.memberDiscountCents || 0),
+    shippingFee: fromCents(order.shippingFeeCents || 0),
+    estimatedPoints,
     couponCode: order.couponCode,
     userCouponId: order.userCouponId,
     recipient: order.recipient,
@@ -63,10 +76,17 @@ router.post('/checkout', asyncHandler(async (req, res) => {
     throw new ApiError(404, 'ADDRESS_NOT_FOUND');
   }
 
-  const cartItems = await prisma.cartItem.findMany({
-    where: { userId: req.user.id },
-    include: { book: { include: { specs: { orderBy: { createdAt: 'asc' } } } } }
-  });
+  const [cartItems, memberProfile] = await Promise.all([
+    prisma.cartItem.findMany({
+      where: { userId: req.user.id },
+      include: { book: { include: { specs: { orderBy: { createdAt: 'asc' } } } } }
+    }),
+    prisma.memberProfile.upsert({
+      where: { userId: req.user.id },
+      update: {},
+      create: { userId: req.user.id }
+    })
+  ]);
 
   if (cartItems.length === 0) {
     throw new ApiError(400, 'CART_EMPTY');
@@ -98,9 +118,13 @@ router.post('/checkout', asyncHandler(async (req, res) => {
     0
   );
 
+  const memberLevel = memberProfile.level;
+  const memberDiscountCents = calculateMemberDiscount(subtotalCents, memberLevel);
+  const afterMemberSubtotal = subtotalCents - memberDiscountCents;
+
   let appliedUserCoupon = null;
   let appliedCoupon = null;
-  let discountCents = 0;
+  let couponDiscountCents = 0;
   let couponCode = null;
   let userCouponId = null;
 
@@ -130,7 +154,7 @@ router.post('/checkout', asyncHandler(async (req, res) => {
       throw new ApiError(400, 'COUPON_NOT_AVAILABLE');
     }
 
-    const result = calculateDiscount(uc.coupon, subtotalCents);
+    const result = calculateDiscount(uc.coupon, afterMemberSubtotal);
     if (!result.valid) {
       throw new ApiError(400, result.reason, {
         minAmount: result.minAmount
@@ -139,12 +163,16 @@ router.post('/checkout', asyncHandler(async (req, res) => {
 
     appliedUserCoupon = uc;
     appliedCoupon = uc.coupon;
-    discountCents = result.discountCents;
+    couponDiscountCents = result.discountCents;
     couponCode = uc.coupon.code;
     userCouponId = uc.id;
   }
 
-  const totalCents = Math.max(0, subtotalCents - discountCents);
+  const totalDiscountCents = memberDiscountCents + couponDiscountCents;
+  const afterDiscountSubtotal = subtotalCents - totalDiscountCents;
+
+  const shippingFeeCents = calculateShippingFee(afterDiscountSubtotal, memberLevel);
+  const totalCents = Math.max(0, afterDiscountSubtotal + shippingFeeCents);
 
   for (const item of cartItems) {
     if (item.book.status !== 'ACTIVE') {
@@ -180,7 +208,9 @@ router.post('/checkout', asyncHandler(async (req, res) => {
         userId: req.user.id,
         paymentMethod: payload.paymentMethod,
         subtotalCents,
-        discountCents,
+        discountCents: totalDiscountCents,
+        memberDiscountCents,
+        shippingFeeCents,
         totalCents,
         couponCode,
         userCouponId,
@@ -376,14 +406,64 @@ router.post('/:id/confirm', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_SHIPPED');
   }
 
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: { status: 'COMPLETED' }
+  const earnedPoints = calculateEarnedPoints(order.totalCents);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const orderUpdated = await tx.order.update({
+      where: { id: order.id },
+      data: { status: 'COMPLETED' }
+    });
+
+    const profile = await tx.memberProfile.upsert({
+      where: { userId: req.user.id },
+      update: {},
+      create: { userId: req.user.id },
+      select: { id: true, totalPoints: true, availablePoints: true, totalSpentCents: true, level: true }
+    });
+
+    const existingLog = await tx.pointLog.findUnique({
+      where: { orderId_source: { orderId: order.id, source: 'ORDER_EARN' } }
+    });
+
+    if (!existingLog && earnedPoints > 0) {
+      const balanceBefore = profile.totalPoints;
+      const balanceAfter = balanceBefore + earnedPoints;
+      const newLevel = calculateLevelByPoints(balanceAfter);
+
+      await tx.pointLog.create({
+        data: {
+          userId: req.user.id,
+          profileId: profile.id,
+          source: 'ORDER_EARN',
+          points: earnedPoints,
+          balanceBefore,
+          balanceAfter,
+          orderId: order.id,
+          remark: `订单完成，实付${fromCents(order.totalCents)}元，获得${earnedPoints}积分`
+        }
+      });
+
+      await tx.memberProfile.update({
+        where: { id: profile.id },
+        data: {
+          totalPoints: balanceAfter,
+          availablePoints: { increment: earnedPoints },
+          totalSpentCents: { increment: order.totalCents },
+          level: newLevel
+        }
+      });
+    }
+
+    return orderUpdated;
   });
 
   await createOrderNotification(req.user.id, 'ORDER_COMPLETED', updated);
 
-  res.json({ message: 'order completed' });
+  res.json({
+    message: 'order completed',
+    earnedPoints,
+    orderId: updated.id
+  });
 }));
 
 router.post('/:id/review', asyncHandler(async (req, res) => {

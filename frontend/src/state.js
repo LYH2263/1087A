@@ -30,7 +30,8 @@ export const state = {
     orders: false,
     addresses: false,
     admin: false,
-    notifications: false
+    notifications: false,
+    member: false
   },
   notifications: {
     list: [],
@@ -55,6 +56,20 @@ export const state = {
   },
   profile: {
     editingAddress: null
+  },
+  member: {
+    loading: false,
+    profile: null,
+    pointLogs: {
+      list: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+      totalEarned: 0,
+      totalSpent: 0
+    },
+    levels: [],
+    preview: null
   }
 };
 

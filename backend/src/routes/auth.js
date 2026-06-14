@@ -12,8 +12,28 @@ const {
   resetPasswordSchema
 } = require('../validators');
 const { requireAuth } = require('../middleware/auth');
+const { getLevelConfig, getLevelProgress } = require('../utils/member');
 
 const router = express.Router();
+
+function mapMemberProfile(profile) {
+  if (!profile) return null;
+  const levelConfig = getLevelConfig(profile.level);
+  const progress = getLevelProgress(profile.totalPoints, profile.level);
+  return {
+    level: profile.level,
+    levelName: levelConfig.name,
+    levelIcon: levelConfig.icon,
+    levelColor: levelConfig.color,
+    totalPoints: profile.totalPoints,
+    availablePoints: profile.availablePoints,
+    spentPoints: profile.spentPoints,
+    totalSpentCents: profile.totalSpentCents,
+    discountRate: levelConfig.discountRate,
+    freeShipping: levelConfig.freeShipping,
+    progress
+  };
+}
 
 function setRefreshCookie(res, token, remember) {
   const maxAgeDays = remember ? config.refreshTokenExpiresDays : 1;
@@ -53,14 +73,24 @@ router.post('/register', asyncHandler(async (req, res) => {
 
   const passwordHash = await hashPassword(payload.password);
 
-  const user = await prisma.user.create({
-    data: {
-      username: payload.username,
-      email: payload.email,
-      phone: payload.phone,
-      passwordHash,
-      role: 'USER'
-    }
+  const user = await prisma.$transaction(async (tx) => {
+    const createdUser = await tx.user.create({
+      data: {
+        username: payload.username,
+        email: payload.email,
+        phone: payload.phone,
+        passwordHash,
+        role: 'USER'
+      }
+    });
+
+    await tx.memberProfile.create({
+      data: {
+        userId: createdUser.id
+      }
+    });
+
+    return createdUser;
   });
 
   res.status(201).json({
@@ -108,6 +138,8 @@ router.post('/login', asyncHandler(async (req, res) => {
 
   setRefreshCookie(res, refreshToken, payload.remember);
 
+  const profile = await prisma.memberProfile.findUnique({ where: { userId: user.id } });
+
   res.json({
     accessToken,
     user: {
@@ -115,7 +147,8 @@ router.post('/login', asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       phone: user.phone,
-      role: user.role
+      role: user.role,
+      member: mapMemberProfile(profile)
     }
   });
 }));
@@ -160,6 +193,7 @@ router.post('/refresh', asyncHandler(async (req, res) => {
   setRefreshCookie(res, newRefreshToken, true);
 
   const accessToken = createAccessToken(session.user);
+  const profile = await prisma.memberProfile.findUnique({ where: { userId: session.userId } });
 
   res.json({
     accessToken,
@@ -168,7 +202,8 @@ router.post('/refresh', asyncHandler(async (req, res) => {
       username: session.user.username,
       email: session.user.email,
       phone: session.user.phone,
-      role: session.user.role
+      role: session.user.role,
+      member: mapMemberProfile(profile)
     }
   });
 }));
@@ -259,11 +294,19 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
 
 router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
-    where: { id: req.user.id }
+    where: { id: req.user.id },
+    include: { memberProfile: true }
   });
 
   if (!user) {
     throw new ApiError(404, 'USER_NOT_FOUND');
+  }
+
+  let profile = user.memberProfile;
+  if (!profile) {
+    profile = await prisma.memberProfile.create({
+      data: { userId: user.id }
+    });
   }
 
   res.json({
@@ -271,7 +314,8 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
     username: user.username,
     email: user.email,
     phone: user.phone,
-    role: user.role
+    role: user.role,
+    member: mapMemberProfile(profile)
   });
 }));
 

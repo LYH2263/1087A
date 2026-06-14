@@ -151,7 +151,8 @@ export function bindEventHandlers({
   openRegisterModal,
   openForgotModal,
   openResetModal,
-  escapeHtmlAttr
+  escapeHtmlAttr,
+  loadMember
 }) {
   function formatCurrency(value) {
     return `¥${Number(value).toFixed(2)}`;
@@ -293,6 +294,7 @@ export function bindEventHandlers({
       updateAuthUI();
       closeModal();
       showToast('登录成功', 'success');
+      try { await loadMember(1); } catch (e) {}
       await setView('books');
     },
     register: async (form) => {
@@ -630,9 +632,17 @@ export function bindEventHandlers({
       showToast('支付成功', 'success');
     },
     'confirm-order': async (target) => {
-      await api.confirmOrder(target.dataset.id);
+      const order = state.orders.find(o => o.id === target.dataset.id);
+      const result = await api.confirmOrder(target.dataset.id);
       await loadOrders();
+      try { await loadMember(1); } catch (e) {}
       safeRender();
+      const earned = result?.earnedPoints ?? order?.estimatedPoints ?? 0;
+      if (earned > 0) {
+        showToast(`确认收货成功，获得 ${earned} 积分`, 'success');
+      } else {
+        showToast('确认收货成功', 'success');
+      }
     },
     'review-order': async (target) => {
       const orderId = target.dataset.id;
@@ -917,6 +927,19 @@ export function bindEventHandlers({
       const totalPages = Math.ceil(state.notifications.total / state.notifications.pageSize);
       if (currentPage < totalPages) {
         await loadNotifications(currentPage + 1);
+      }
+    },
+    'member-log-prev': async () => {
+      const currentPage = state.member.pointLogs.page;
+      if (currentPage > 1) {
+        await loadMember(currentPage - 1);
+      }
+    },
+    'member-log-next': async () => {
+      const currentPage = state.member.pointLogs.page;
+      const totalPages = Math.ceil(state.member.pointLogs.total / state.member.pointLogs.pageSize);
+      if (currentPage < totalPages) {
+        await loadMember(currentPage + 1);
       }
     }
   };
