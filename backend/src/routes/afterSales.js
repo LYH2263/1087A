@@ -29,7 +29,8 @@ function mapAfterSale(afterSale) {
       author: item.author,
       coverUrl: item.coverUrl,
       price: fromCents(item.priceCents),
-      quantity: item.quantity
+      quantity: item.quantity,
+      specName: item.specName
     }))
   };
 }
@@ -121,7 +122,8 @@ router.post('/', asyncHandler(async (req, res) => {
       author: orderItem.author,
       coverUrl: orderItem.coverUrl,
       priceCents: orderItem.priceCents,
-      quantity: reqItem.quantity
+      quantity: reqItem.quantity,
+      specName: orderItem.specName
     });
   }
 

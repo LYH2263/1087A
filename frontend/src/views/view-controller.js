@@ -73,6 +73,50 @@ export function createViewController({
     return state.wishlist.some((item) => item.bookId === bookId);
   }
 
+  function getSelectedSpecId(bookId) {
+    return state.selectedSpecs[bookId] || '';
+  }
+
+  function getSelectedSpec(book) {
+    if (!book.hasSpecs || !book.specs || book.specs.length === 0) return null;
+    const specId = getSelectedSpecId(book.id);
+    if (!specId) return book.specs[0];
+    return book.specs.find((s) => s.id === specId) || book.specs[0];
+  }
+
+  function getEffectivePrice(book) {
+    const spec = getSelectedSpec(book);
+    if (spec) return spec.price;
+    return book.price;
+  }
+
+  function getEffectiveStock(book) {
+    const spec = getSelectedSpec(book);
+    if (spec) return spec.stock;
+    return book.stock;
+  }
+
+  function getEffectiveCover(book) {
+    const spec = getSelectedSpec(book);
+    if (spec && spec.coverUrl) return spec.coverUrl;
+    return book.coverUrl;
+  }
+
+  function renderSpecSelector(book) {
+    if (!book.hasSpecs || !book.specs || book.specs.length === 0) return '';
+    const selectedSpec = getSelectedSpec(book);
+    return `
+      <div class="flex flex-wrap gap-2 mt-2">
+        ${book.specs.map((spec) => `
+          <button class="px-3 py-1 rounded-full text-sm border transition ${spec.id === selectedSpec.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-500'}"
+            data-action="select-spec" data-book-id="${book.id}" data-spec-id="${spec.id}">
+            ${spec.name}
+          </button>
+        `).join('')}
+      </div>
+    `;
+  }
+
   function renderBooks() {
     const search = state.bookSearch;
     const categoryOptions = state.categories
@@ -83,10 +127,14 @@ export function createViewController({
       .map(
         (book) => {
           const favorited = isBookFavorited(book.id);
+          const effectivePrice = getEffectivePrice(book);
+          const effectiveStock = getEffectiveStock(book);
+          const effectiveCover = getEffectiveCover(book);
+          const selectedSpec = getSelectedSpec(book);
           return `
         <div class="card hover-card p-4 flex flex-col gap-3">
           <div class="relative rounded-xl overflow-hidden h-44 bg-slate-100">
-            <img src="${book.coverUrl}" alt="${book.title}" class="w-full h-full object-contain" />
+            <img src="${effectiveCover}" alt="${book.title}" class="w-full h-full object-contain" />
             <button class="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-lg transition hover:scale-110 ${favorited ? 'text-red-500' : 'text-slate-400 hover:text-red-400'}" data-action="toggle-favorite" data-id="${book.id}" title="${favorited ? '取消收藏' : '收藏'}">
               ${favorited ? '♥' : '♡'}
             </button>
@@ -94,15 +142,15 @@ export function createViewController({
           <div>
             <h3 class="font-semibold text-lg">${book.title}</h3>
             <p class="text-sm text-slate-500">${book.author}</p>
-            <div class="flex flex-wrap gap-2 mt-2">
-              <span class="badge">${book.category?.name || '未分类'}</span>
-              <span class="badge">库存 ${book.stock}</span>
-              <span class="badge">销量 ${book.sales}</span>
-            </div>
+            ${book.hasSpecs ? `<div class="flex flex-wrap gap-2 mt-2"><span class="badge">多规格</span></div>` : `<div class="flex flex-wrap gap-2 mt-2"><span class="badge">库存 ${effectiveStock}</span><span class="badge">销量 ${book.sales}</span></div>`}
+            ${renderSpecSelector(book)}
           </div>
           <div class="flex items-center justify-between">
-            <p class="text-lg font-semibold text-slate-900">${formatCurrency(book.price)}</p>
-            <button class="btn-primary" data-action="add-to-cart" data-id="${book.id}">加入购物车</button>
+            <div>
+              <p class="text-lg font-semibold text-slate-900">${formatCurrency(effectivePrice)}</p>
+              ${book.hasSpecs ? `<p class="text-xs text-slate-400">库存 ${effectiveStock}${selectedSpec ? ' · ' + selectedSpec.name : ''}</p>` : ''}
+            </div>
+            <button class="btn-primary" data-action="add-to-cart" data-id="${book.id}" data-spec-id="${selectedSpec ? selectedSpec.id : ''}">加入购物车</button>
           </div>
         </div>
       `;
@@ -168,6 +216,7 @@ export function createViewController({
         <div class="flex-1">
           <h3 class="font-semibold">${item.book.title}</h3>
           <p class="text-sm text-slate-500">${item.book.author}</p>
+          ${item.specName ? `<p class="text-sm text-teal-700">规格：${item.specName}</p>` : ''}
           <p class="text-sm text-slate-500">单价 ${formatCurrency(item.book.price)}</p>
         </div>
         <div class="flex items-center gap-3">
@@ -268,7 +317,7 @@ export function createViewController({
                 <img src="${item.coverUrl}" alt="${item.title}" class="w-16 h-16 rounded-lg object-contain bg-white" />
                 <div class="flex-1">
                   <p class="font-medium">${item.title}</p>
-                  <p class="text-xs text-slate-500">${item.author} · ${item.quantity} 本</p>
+                  <p class="text-xs text-slate-500">${item.author}${item.specName ? ' · ' + item.specName : ''} · ${item.quantity} 本</p>
                 </div>
                 <p class="text-sm font-semibold">${formatCurrency(item.price)}</p>
               </div>
@@ -436,9 +485,11 @@ export function createViewController({
             <span>价格：${formatCurrency(book.price)}</span>
             <span class="${isLowStock ? 'text-amber-600 font-semibold' : ''}">库存：${book.stock} / 阈值：${threshold}</span>
             <span>分类：${book.category?.name || '-'}</span>
+            ${book.hasSpecs ? `<span class="text-teal-700 font-semibold">${book.specs.length} 个规格</span>` : ''}
           </div>
           <div class="flex flex-wrap gap-2">
             <button class="btn-outline" data-action="edit-book" data-id="${book.id}">编辑</button>
+            ${book.hasSpecs ? `<button class="btn-outline" data-action="manage-specs" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">管理规格</button>` : `<button class="btn-outline" data-action="manage-specs" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">添加规格</button>`}
             <button class="btn-outline" data-action="set-book-threshold" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-current="${bookThresholdMap.get(book.id) ?? ''}">设置阈值</button>
             ${isLowStock ? `<button class="btn-primary" data-action="quick-restock" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">补货</button>` : ''}
             ${book.status === 'ACTIVE'

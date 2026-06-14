@@ -12,6 +12,7 @@ export const state = {
     minPrice: '',
     maxPrice: ''
   },
+  selectedSpecs: {},
   cart: [],
   wishlist: [],
   orders: [],

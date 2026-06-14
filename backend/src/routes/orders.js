@@ -35,7 +35,9 @@ function mapOrder(order) {
       coverUrl: item.coverUrl,
       price: fromCents(item.priceCents),
       quantity: item.quantity,
-      returnedQuantity: item.returnedQuantity
+      returnedQuantity: item.returnedQuantity,
+      specName: item.specName,
+      specId: item.specId
     }))
   };
 }
@@ -63,15 +65,36 @@ router.post('/checkout', asyncHandler(async (req, res) => {
 
   const cartItems = await prisma.cartItem.findMany({
     where: { userId: req.user.id },
-    include: { book: true }
+    include: { book: { include: { specs: { orderBy: { createdAt: 'asc' } } } } }
   });
 
   if (cartItems.length === 0) {
     throw new ApiError(400, 'CART_EMPTY');
   }
 
+  function getSpec(book, specId) {
+    if (!specId || specId === '') return null;
+    return (book.specs || []).find((s) => s.id === specId) || null;
+  }
+
+  function getEffectivePriceCents(book, spec) {
+    return spec ? spec.priceCents : book.priceCents;
+  }
+
+  function getEffectiveStock(book, spec) {
+    return spec ? spec.stock : book.stock;
+  }
+
+  function getEffectiveCover(book, spec) {
+    if (spec && spec.coverUrl) return spec.coverUrl;
+    return book.coverUrl;
+  }
+
   const subtotalCents = cartItems.reduce(
-    (sum, item) => sum + item.book.priceCents * item.quantity,
+    (sum, item) => {
+      const spec = getSpec(item.book, item.specId);
+      return sum + getEffectivePriceCents(item.book, spec) * item.quantity;
+    },
     0
   );
 
@@ -127,7 +150,9 @@ router.post('/checkout', asyncHandler(async (req, res) => {
     if (item.book.status !== 'ACTIVE') {
       throw new ApiError(400, 'BOOK_NOT_AVAILABLE');
     }
-    if (item.book.stock < item.quantity) {
+    const spec = getSpec(item.book, item.specId);
+    const effectiveStock = getEffectiveStock(item.book, spec);
+    if (effectiveStock < item.quantity) {
       throw new ApiError(400, 'INSUFFICIENT_STOCK');
     }
   }
@@ -179,23 +204,37 @@ router.post('/checkout', asyncHandler(async (req, res) => {
       });
     }
 
-    const orderItems = cartItems.map((item) => ({
-      orderId: created.id,
-      bookId: item.bookId,
-      title: item.book.title,
-      author: item.book.author,
-      coverUrl: item.book.coverUrl,
-      priceCents: item.book.priceCents,
-      quantity: item.quantity
-    }));
+    const orderItems = cartItems.map((item) => {
+      const spec = getSpec(item.book, item.specId);
+      const effectiveCover = getEffectiveCover(item.book, spec);
+      return {
+        orderId: created.id,
+        bookId: item.bookId,
+        title: item.book.title,
+        author: item.book.author,
+        coverUrl: effectiveCover,
+        priceCents: getEffectivePriceCents(item.book, spec),
+        quantity: item.quantity,
+        specName: spec ? spec.name : null,
+        specId: item.specId && item.specId !== '' ? item.specId : null
+      };
+    });
 
     await tx.orderItem.createMany({ data: orderItems });
 
     for (const item of cartItems) {
-      await tx.book.update({
-        where: { id: item.bookId },
-        data: { stock: { decrement: item.quantity } }
-      });
+      const spec = getSpec(item.book, item.specId);
+      if (spec) {
+        await tx.bookSpec.update({
+          where: { id: spec.id },
+          data: { stock: { decrement: item.quantity } }
+        });
+      } else {
+        await tx.book.update({
+          where: { id: item.bookId },
+          data: { stock: { decrement: item.quantity } }
+        });
+      }
     }
 
     await tx.cartItem.deleteMany({
@@ -299,10 +338,25 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
     }
 
     for (const item of order.items) {
-      await tx.book.update({
-        where: { id: item.bookId },
-        data: { stock: { increment: item.quantity } }
-      });
+      if (item.specId) {
+        const spec = await tx.bookSpec.findUnique({ where: { id: item.specId } });
+        if (spec) {
+          await tx.bookSpec.update({
+            where: { id: item.specId },
+            data: { stock: { increment: item.quantity } }
+          });
+        } else {
+          await tx.book.update({
+            where: { id: item.bookId },
+            data: { stock: { increment: item.quantity } }
+          });
+        }
+      } else {
+        await tx.book.update({
+          where: { id: item.bookId },
+          data: { stock: { increment: item.quantity } }
+        });
+      }
     }
   });
 

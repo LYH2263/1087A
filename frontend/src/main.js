@@ -44,6 +44,9 @@ const toastMap = [
   [/invalid_file_type/i, '仅支持 JPG/PNG/WEBP/GIF/SVG 格式图片'],
   [/file_too_large/i, '图片大小不能超过 2MB'],
   [/forbidden/i, '没有权限执行该操作'],
+  [/spec_required/i, '该书籍有多个规格，请选择规格'],
+  [/spec_not_found/i, '所选规格不存在，请重新选择'],
+  [/spec_name_exists/i, '规格名称已存在'],
   [/internal server error/i, '服务器开小差了，请稍后再试']
 ];
 
@@ -362,7 +365,8 @@ bindEventHandlers({
   openLoginModal,
   openRegisterModal,
   openForgotModal,
-  openResetModal
+  openResetModal,
+  escapeHtmlAttr
 });
 
 let unreadPollInterval = null;

@@ -150,8 +150,13 @@ export function bindEventHandlers({
   openLoginModal,
   openRegisterModal,
   openForgotModal,
-  openResetModal
+  openResetModal,
+  escapeHtmlAttr
 }) {
+  function formatCurrency(value) {
+    return `¥${Number(value).toFixed(2)}`;
+  }
+
   async function loadStockWarnings() {
     const data = await api.admin.getStockWarnings();
     state.admin.stockWarnings = data.books;
@@ -377,6 +382,43 @@ export function bindEventHandlers({
       state.admin.selectedRestockBooks.clear();
       safeRender();
       showToast(`批量补货成功，共补货 ${result.results.length} 本书籍`, 'success');
+    },
+    'admin-add-spec': async (form) => {
+      const data = getFormData(form);
+      const bookId = form.dataset.bookId;
+      const payload = {
+        name: data.name,
+        price: parseFloat(data.price),
+        stock: parseInt(data.stock, 10),
+        coverUrl: data.coverUrl || null
+      };
+      if (!payload.name || isNaN(payload.price) || payload.price <= 0 || isNaN(payload.stock) || payload.stock < 0) {
+        throw new Error('请填写正确的规格信息');
+      }
+      await api.admin.createBookSpec(bookId, payload);
+      closeModal();
+      await loadAdmin();
+      safeRender();
+      showToast('规格已添加', 'success');
+    },
+    'admin-edit-spec': async (form) => {
+      const data = getFormData(form);
+      const bookId = form.dataset.bookId;
+      const specId = form.dataset.specId;
+      const payload = {
+        name: data.name,
+        price: parseFloat(data.price),
+        stock: parseInt(data.stock, 10),
+        coverUrl: data.coverUrl || null
+      };
+      if (!payload.name || isNaN(payload.price) || payload.price <= 0 || isNaN(payload.stock) || payload.stock < 0) {
+        throw new Error('请填写正确的规格信息');
+      }
+      await api.admin.updateBookSpec(bookId, specId, payload);
+      closeModal();
+      await loadAdmin();
+      safeRender();
+      showToast('规格已更新', 'success');
     }
   };
 
@@ -552,7 +594,9 @@ export function bindEventHandlers({
         openLoginModal();
         return;
       }
-      await api.addToCart({ bookId: target.dataset.id, quantity: 1 });
+      const bookId = target.dataset.id;
+      const specId = target.dataset.specId || '';
+      await api.addToCart({ bookId, quantity: 1, specId });
       showToast('已加入购物车', 'success');
     },
     'reset-search': async (target) => {
@@ -635,6 +679,84 @@ export function bindEventHandlers({
       const book = state.admin.books.find((item) => item.id === target.dataset.id);
       state.admin.editingBook = book;
       safeRender();
+    },
+    'select-spec': async (target) => {
+      const bookId = target.dataset.bookId;
+      const specId = target.dataset.specId;
+      state.selectedSpecs[bookId] = specId;
+      safeRender();
+    },
+    'manage-specs': async (target) => {
+      const bookId = target.dataset.id;
+      const bookTitle = target.dataset.title;
+      const book = state.admin.books.find((b) => b.id === bookId);
+      const specs = book?.specs || [];
+      const specRows = specs.length > 0
+        ? specs.map((spec) => `
+          <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+            <div class="flex-1">
+              <p class="font-medium">${spec.name}</p>
+              <p class="text-sm text-slate-500">价格 ${formatCurrency(spec.price)} · 库存 ${spec.stock}</p>
+            </div>
+            <button class="btn-outline text-sm" data-action="edit-spec" data-book-id="${bookId}" data-spec-id="${spec.id}" data-name="${escapeHtmlAttr(spec.name)}" data-price="${spec.price}" data-stock="${spec.stock}" data-cover="${spec.coverUrl || ''}">编辑</button>
+            <button class="btn-outline text-sm text-red-600 border-red-200" data-action="delete-spec" data-book-id="${bookId}" data-spec-id="${spec.id}" data-name="${escapeHtmlAttr(spec.name)}">删除</button>
+          </div>
+        `).join('')
+        : '<p class="text-slate-500 text-sm">暂无规格，请添加</p>';
+      openModal(`
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">「${bookTitle}」规格管理</h3>
+          <div class="space-y-2 max-h-60 overflow-y-auto">${specRows}</div>
+          <div class="border-t border-slate-200 pt-4">
+            <h4 class="font-semibold text-sm mb-2">新增规格</h4>
+            <form data-form="admin-add-spec" data-book-id="${bookId}" class="grid grid-cols-2 gap-3" novalidate>
+              <input class="input" name="name" placeholder="规格名称（如平装）" required />
+              <input class="input" name="price" type="number" step="0.01" min="0.01" placeholder="价格" required />
+              <input class="input" name="stock" type="number" min="0" placeholder="库存" required />
+              <input class="input" name="coverUrl" placeholder="封面URL（可选）" />
+              <div class="col-span-2 flex justify-end gap-2">
+                <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+                <button type="submit" class="btn-primary">添加规格</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `);
+    },
+    'edit-spec': async (target) => {
+      const bookId = target.dataset.bookId;
+      const specId = target.dataset.specId;
+      const name = target.dataset.name;
+      const price = target.dataset.price;
+      const stock = target.dataset.stock;
+      const cover = target.dataset.cover;
+      const book = state.admin.books.find((b) => b.id === bookId);
+      const bookTitle = book?.title || '';
+      openModal(`
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">编辑规格「${name}」</h3>
+          <form data-form="admin-edit-spec" data-book-id="${bookId}" data-spec-id="${specId}" class="grid grid-cols-2 gap-3" novalidate>
+            <input class="input" name="name" placeholder="规格名称" value="${name}" required />
+            <input class="input" name="price" type="number" step="0.01" min="0.01" placeholder="价格" value="${price}" required />
+            <input class="input" name="stock" type="number" min="0" placeholder="库存" value="${stock}" required />
+            <input class="input" name="coverUrl" placeholder="封面URL（可选）" value="${cover}" />
+            <div class="col-span-2 flex justify-end gap-2">
+              <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+              <button type="submit" class="btn-primary">保存修改</button>
+            </div>
+          </form>
+        </div>
+      `);
+    },
+    'delete-spec': async (target) => {
+      const bookId = target.dataset.bookId;
+      const specId = target.dataset.specId;
+      const name = target.dataset.name;
+      if (!confirm(`确定要删除规格「${name}」吗？`)) return;
+      await api.admin.deleteBookSpec(bookId, specId);
+      await loadAdmin();
+      safeRender();
+      showToast('规格已删除', 'success');
     },
     'deactivate-book': async (target) => {
       await api.admin.deactivateBook(target.dataset.id);

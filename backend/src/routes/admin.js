@@ -5,7 +5,7 @@ const multer = require('multer');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema, rejectAfterSaleSchema } = require('../validators');
+const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema, rejectAfterSaleSchema, bookSpecSchema, bookSpecUpdateSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 const { generateCouponCode } = require('../utils/coupon');
 const { createOrderNotification } = require('../utils/notification');
@@ -40,18 +40,34 @@ const upload = multer({
 });
 
 function mapBook(book) {
+  const specs = (book.specs || []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    price: fromCents(s.priceCents),
+    stock: s.stock,
+    coverUrl: s.coverUrl
+  }));
+  const hasSpecs = specs.length > 0;
+  const displayPrice = hasSpecs
+    ? fromCents(Math.min(...book.specs.map((s) => s.priceCents)))
+    : fromCents(book.priceCents);
+  const totalStock = hasSpecs
+    ? book.specs.reduce((sum, s) => sum + s.stock, 0)
+    : book.stock;
   return {
     id: book.id,
     title: book.title,
     author: book.author,
     isbn: book.isbn,
     description: book.description,
-    price: fromCents(book.priceCents),
-    stock: book.stock,
+    price: displayPrice,
+    stock: totalStock,
     coverUrl: book.coverUrl,
     sales: book.sales,
     status: book.status,
-    category: book.category
+    category: book.category,
+    hasSpecs,
+    specs
   };
 }
 
@@ -71,7 +87,7 @@ router.get('/books', asyncHandler(async (req, res) => {
 
   const books = await prisma.book.findMany({
     where,
-    include: { category: true },
+    include: { category: true, specs: { orderBy: { createdAt: 'asc' } } },
     orderBy: { createdAt: 'desc' }
   });
 
@@ -108,7 +124,7 @@ router.post('/books', asyncHandler(async (req, res) => {
       coverUrl: payload.coverUrl,
       categoryId: payload.categoryId
     },
-    include: { category: true }
+    include: { category: true, specs: { orderBy: { createdAt: 'asc' } } }
   });
 
   res.status(201).json(mapBook(book));
@@ -126,7 +142,7 @@ router.put('/books/:id', asyncHandler(async (req, res) => {
   const book = await prisma.book.update({
     where: { id: req.params.id },
     data,
-    include: { category: true }
+    include: { category: true, specs: { orderBy: { createdAt: 'asc' } } }
   });
 
   res.json(mapBook(book));
@@ -144,10 +160,118 @@ router.delete('/books/:id', asyncHandler(async (req, res) => {
 router.post('/books/:id/restore', asyncHandler(async (req, res) => {
   const book = await prisma.book.update({
     where: { id: req.params.id },
-    data: { status: 'ACTIVE' }
+    data: { status: 'ACTIVE' },
+    include: { category: true, specs: { orderBy: { createdAt: 'asc' } } }
   });
 
-  res.json({ message: 'book activated', id: book.id });
+  res.json(mapBook(book));
+}));
+
+router.get('/books/:bookId/specs', asyncHandler(async (req, res) => {
+  const book = await prisma.book.findUnique({
+    where: { id: req.params.bookId }
+  });
+
+  if (!book) {
+    throw new ApiError(404, 'BOOK_NOT_FOUND');
+  }
+
+  const specs = await prisma.bookSpec.findMany({
+    where: { bookId: req.params.bookId },
+    orderBy: { createdAt: 'asc' }
+  });
+
+  res.json(specs.map((s) => ({
+    id: s.id,
+    name: s.name,
+    price: fromCents(s.priceCents),
+    stock: s.stock,
+    coverUrl: s.coverUrl,
+    createdAt: s.createdAt
+  })));
+}));
+
+router.post('/books/:bookId/specs', asyncHandler(async (req, res) => {
+  const book = await prisma.book.findUnique({
+    where: { id: req.params.bookId }
+  });
+
+  if (!book) {
+    throw new ApiError(404, 'BOOK_NOT_FOUND');
+  }
+
+  const payload = bookSpecSchema.parse(req.body);
+
+  const existing = await prisma.bookSpec.findUnique({
+    where: { bookId_name: { bookId: req.params.bookId, name: payload.name } }
+  });
+
+  if (existing) {
+    throw new ApiError(409, 'SPEC_NAME_EXISTS');
+  }
+
+  const spec = await prisma.bookSpec.create({
+    data: {
+      bookId: req.params.bookId,
+      name: payload.name,
+      priceCents: toCents(payload.price),
+      stock: payload.stock,
+      coverUrl: payload.coverUrl || null
+    }
+  });
+
+  res.status(201).json({
+    id: spec.id,
+    name: spec.name,
+    price: fromCents(spec.priceCents),
+    stock: spec.stock,
+    coverUrl: spec.coverUrl
+  });
+}));
+
+router.put('/books/:bookId/specs/:specId', asyncHandler(async (req, res) => {
+  const spec = await prisma.bookSpec.findUnique({
+    where: { id: req.params.specId }
+  });
+
+  if (!spec || spec.bookId !== req.params.bookId) {
+    throw new ApiError(404, 'SPEC_NOT_FOUND');
+  }
+
+  const payload = bookSpecUpdateSchema.parse(req.body);
+
+  const data = { ...payload };
+  if (payload.price !== undefined) {
+    data.priceCents = toCents(payload.price);
+    delete data.price;
+  }
+
+  const updated = await prisma.bookSpec.update({
+    where: { id: req.params.specId },
+    data
+  });
+
+  res.json({
+    id: updated.id,
+    name: updated.name,
+    price: fromCents(updated.priceCents),
+    stock: updated.stock,
+    coverUrl: updated.coverUrl
+  });
+}));
+
+router.delete('/books/:bookId/specs/:specId', asyncHandler(async (req, res) => {
+  const spec = await prisma.bookSpec.findUnique({
+    where: { id: req.params.specId }
+  });
+
+  if (!spec || spec.bookId !== req.params.bookId) {
+    throw new ApiError(404, 'SPEC_NOT_FOUND');
+  }
+
+  await prisma.bookSpec.delete({ where: { id: req.params.specId } });
+
+  res.json({ message: 'spec deleted', id: spec.id });
 }));
 
 router.get('/categories', asyncHandler(async (req, res) => {
@@ -223,7 +347,9 @@ router.get('/orders', asyncHandler(async (req, res) => {
       coverUrl: item.coverUrl,
       price: fromCents(item.priceCents),
       quantity: item.quantity,
-      returnedQuantity: item.returnedQuantity
+      returnedQuantity: item.returnedQuantity,
+      specName: item.specName,
+      specId: item.specId
     }))
   })));
 }));
@@ -370,6 +496,16 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
           sales: { decrement: item.quantity }
         }
       });
+
+      if (item.specId) {
+        const spec = await tx.bookSpec.findUnique({ where: { id: item.specId } });
+        if (spec) {
+          await tx.bookSpec.update({
+            where: { id: item.specId },
+            data: { stock: { increment: item.quantity } }
+          });
+        }
+      }
     }
 
     return await tx.order.findUnique({
@@ -806,7 +942,8 @@ function mapAdminAfterSale(afterSale) {
       author: item.author,
       coverUrl: item.coverUrl,
       price: fromCents(item.priceCents),
-      quantity: item.quantity
+      quantity: item.quantity,
+      specName: item.specName
     }))
   };
 }
@@ -905,6 +1042,16 @@ router.post('/after-sales/:id/approve', asyncHandler(async (req, res) => {
           sales: { decrement: item.quantity }
         }
       });
+
+      if (orderItem.specId) {
+        const spec = await tx.bookSpec.findUnique({ where: { id: orderItem.specId } });
+        if (spec) {
+          await tx.bookSpec.update({
+            where: { id: orderItem.specId },
+            data: { stock: { increment: item.quantity } }
+          });
+        }
+      }
     }
 
     const allOrderItems = afterSale.order.items;

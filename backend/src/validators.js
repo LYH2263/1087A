@@ -62,7 +62,8 @@ const categorySchema = z.object({
 
 const cartAddSchema = z.object({
   bookId: z.string().min(1),
-  quantity: z.number().int().min(1).max(99)
+  quantity: z.number().int().min(1).max(99),
+  specId: z.string().optional().default('')
 });
 
 const cartUpdateSchema = z.object({
@@ -161,6 +162,20 @@ const rejectAfterSaleSchema = z.object({
   rejectReason: z.string().min(1).max(500)
 });
 
+const bookSpecSchema = z.object({
+  name: z.string().min(1, '规格名称必填').max(30, '规格名称最多30字'),
+  price: z.number().positive('价格需大于0'),
+  stock: z.number().int().min(0, '库存不能为负数'),
+  coverUrl: z.string().optional().nullable()
+});
+
+const bookSpecUpdateSchema = z.object({
+  name: z.string().min(1).max(30).optional(),
+  price: z.number().positive().optional(),
+  stock: z.number().int().min(0).optional(),
+  coverUrl: z.string().optional().nullable()
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -182,5 +197,7 @@ module.exports = {
   singleRestockSchema,
   batchRestockSchema,
   createAfterSaleSchema,
-  rejectAfterSaleSchema
+  rejectAfterSaleSchema,
+  bookSpecSchema,
+  bookSpecUpdateSchema
 };

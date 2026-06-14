@@ -7,18 +7,34 @@ const { ApiError } = require('../errors');
 const router = express.Router();
 
 function mapBook(book) {
+  const specs = (book.specs || []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    price: fromCents(s.priceCents),
+    stock: s.stock,
+    coverUrl: s.coverUrl
+  }));
+  const hasSpecs = specs.length > 0;
+  const displayPrice = hasSpecs
+    ? fromCents(Math.min(...book.specs.map((s) => s.priceCents)))
+    : fromCents(book.priceCents);
+  const totalStock = hasSpecs
+    ? book.specs.reduce((sum, s) => sum + s.stock, 0)
+    : book.stock;
   return {
     id: book.id,
     title: book.title,
     author: book.author,
     isbn: book.isbn,
     description: book.description,
-    price: fromCents(book.priceCents),
-    stock: book.stock,
+    price: displayPrice,
+    stock: totalStock,
     coverUrl: book.coverUrl,
     sales: book.sales,
     status: book.status,
-    category: book.category
+    category: book.category,
+    hasSpecs,
+    specs
   };
 }
 
@@ -79,7 +95,7 @@ router.get('/', asyncHandler(async (req, res) => {
 
   const books = await prisma.book.findMany({
     where,
-    include: { category: true },
+    include: { category: true, specs: { orderBy: { createdAt: 'asc' } } },
     orderBy
   });
 
@@ -96,7 +112,7 @@ router.get('/categories', asyncHandler(async (req, res) => {
 router.get('/:id([a-z0-9]{25})', asyncHandler(async (req, res) => {
   const book = await prisma.book.findUnique({
     where: { id: req.params.id },
-    include: { category: true }
+    include: { category: true, specs: { orderBy: { createdAt: 'asc' } } }
   });
 
   if (!book || book.status !== 'ACTIVE') {

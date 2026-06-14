@@ -54,7 +54,12 @@ async function main() {
       priceCents: 4800,
       stock: 120,
       coverUrl: '/covers/cover-1.svg',
-      category: '科技'
+      category: '科技',
+      specs: [
+        { name: '平装', priceCents: 4800, stock: 80 },
+        { name: '精装', priceCents: 6800, stock: 30 },
+        { name: '电子版', priceCents: 2800, stock: 999 }
+      ]
     },
     {
       title: '解忧杂货店',
@@ -74,7 +79,11 @@ async function main() {
       priceCents: 6800,
       stock: 60,
       coverUrl: '/covers/cover-3.svg',
-      category: '经管'
+      category: '经管',
+      specs: [
+        { name: '平装', priceCents: 6800, stock: 40 },
+        { name: '精装', priceCents: 9800, stock: 20 }
+      ]
     },
     {
       title: '小王子',
@@ -84,7 +93,12 @@ async function main() {
       priceCents: 2800,
       stock: 150,
       coverUrl: '/covers/cover-4.svg',
-      category: '少儿'
+      category: '少儿',
+      specs: [
+        { name: '平装', priceCents: 2800, stock: 100 },
+        { name: '精装', priceCents: 4800, stock: 30 },
+        { name: '中英双语版', priceCents: 3800, stock: 20 }
+      ]
     },
     {
       title: '纳瓦尔宝典',
@@ -124,12 +138,16 @@ async function main() {
       priceCents: 8800,
       stock: 45,
       coverUrl: '/covers/cover-8.svg',
-      category: '少儿'
+      category: '少儿',
+      specs: [
+        { name: '精装', priceCents: 8800, stock: 30 },
+        { name: '礼盒装', priceCents: 12800, stock: 15 }
+      ]
     }
   ];
 
   for (const book of books) {
-    await prisma.book.upsert({
+    const created = await prisma.book.upsert({
       where: { isbn: book.isbn },
       update: {
         title: book.title,
@@ -151,6 +169,24 @@ async function main() {
         categoryId: categoryMap.get(book.category)
       }
     });
+
+    if (book.specs && book.specs.length > 0) {
+      for (const spec of book.specs) {
+        await prisma.bookSpec.upsert({
+          where: { bookId_name: { bookId: created.id, name: spec.name } },
+          update: {
+            priceCents: spec.priceCents,
+            stock: spec.stock
+          },
+          create: {
+            bookId: created.id,
+            name: spec.name,
+            priceCents: spec.priceCents,
+            stock: spec.stock
+          }
+        });
+      }
+    }
   }
 
   await prisma.address.upsert({

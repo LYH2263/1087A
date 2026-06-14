@@ -118,7 +118,7 @@ router.delete('/book/:bookId', asyncHandler(async (req, res) => {
 router.post('/:itemId/add-to-cart', asyncHandler(async (req, res) => {
   const item = await prisma.wishlistItem.findUnique({
     where: { id: req.params.itemId },
-    include: { book: true }
+    include: { book: { include: { specs: { orderBy: { createdAt: 'asc' } } } } }
   });
 
   if (!item || item.userId !== req.user.id) {
@@ -129,15 +129,22 @@ router.post('/:itemId/add-to-cart', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'BOOK_NOT_ACTIVE');
   }
 
-  if (item.book.stock < 1) {
+  const hasSpecs = (item.book.specs || []).length > 0;
+  const firstSpec = hasSpecs ? item.book.specs[0] : null;
+  const effectiveStock = firstSpec ? firstSpec.stock : item.book.stock;
+
+  if (effectiveStock < 1) {
     throw new ApiError(400, 'INSUFFICIENT_STOCK');
   }
 
+  const specId = firstSpec ? firstSpec.id : '';
+
   const existingCartItem = await prisma.cartItem.findUnique({
     where: {
-      userId_bookId: {
+      userId_bookId_specId: {
         userId: req.user.id,
-        bookId: item.bookId
+        bookId: item.bookId,
+        specId
       }
     }
   });
@@ -156,6 +163,7 @@ router.post('/:itemId/add-to-cart', asyncHandler(async (req, res) => {
       data: {
         userId: req.user.id,
         bookId: item.bookId,
+        specId,
         quantity: 1
       }
     });

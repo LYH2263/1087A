@@ -390,6 +390,26 @@ export const api = {
     getRestockLogs(params = {}) {
       const query = new URLSearchParams(params).toString();
       return request(`/admin/stock/restock-logs${query ? `?${query}` : ''}`);
+    },
+    getBookSpecs(bookId) {
+      return request(`/admin/books/${bookId}/specs`);
+    },
+    createBookSpec(bookId, payload) {
+      return request(`/admin/books/${bookId}/specs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    updateBookSpec(bookId, specId, payload) {
+      return request(`/admin/books/${bookId}/specs/${specId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    deleteBookSpec(bookId, specId) {
+      return request(`/admin/books/${bookId}/specs/${specId}`, { method: 'DELETE' });
     }
   },
   getNotifications(params = {}) {
