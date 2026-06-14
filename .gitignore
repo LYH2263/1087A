@@ -1,0 +1,22 @@
+node_modules
+**/node_modules
+**/.pnpm-store
+**/dist
+**/build
+**/.DS_Store
+**/.env
+**/.env.*
+**/.idea
+**/.vscode
+**/__pycache__
+**/.venv
+**/.pytest_cache
+**/.cache
+**/*.log
+**/coverage
+
+# 题目文件与对话记录
+题目.md
+**/题目.md
+对话/
+**/对话/

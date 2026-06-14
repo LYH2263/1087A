@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bookshop API Docs</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 32px; line-height: 1.6; }
+      h1 { margin-bottom: 8px; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+      .section { margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <h1>Bookshop API Docs</h1>
+    <p>示例接口文档，提供前后端联调参考。</p>
+
+    <div class="section">
+      <h2>认证</h2>
+      <ul>
+        <li><code>POST /api/auth/register</code> 注册</li>
+        <li><code>POST /api/auth/login</code> 登录</li>
+        <li><code>POST /api/auth/logout</code> 退出</li>
+        <li><code>POST /api/auth/refresh</code> 刷新 Token</li>
+        <li><code>POST /api/auth/forgot-password</code> 忘记密码</li>
+        <li><code>POST /api/auth/reset-password</code> 重置密码</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>书籍与订单</h2>
+      <ul>
+        <li><code>GET /api/books</code> 书籍查询</li>
+        <li><code>POST /api/cart</code> 加入购物车</li>
+        <li><code>POST /api/orders/checkout</code> 生成订单</li>
+      </ul>
+    </div>
+  </body>
+</html>

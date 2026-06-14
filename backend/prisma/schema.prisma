@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum BookStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  SHIPPED
+  COMPLETED
+  CANCELED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  WECHAT
+  ALIPAY
+  CARD
+  COD
+}
+
+model User {
+  id           String          @id @default(cuid())
+  username     String          @unique
+  email        String          @unique
+  phone        String          @unique
+  passwordHash String
+  role         Role            @default(USER)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  sessions     Session[]
+  addresses    Address[]
+  cartItems    CartItem[]
+  orders       Order[]
+  passwordResets PasswordReset[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  books     Book[]
+}
+
+model Book {
+  id          String     @id @default(cuid())
+  title       String
+  author      String
+  isbn        String     @unique
+  description String
+  priceCents  Int
+  stock       Int
+  coverUrl    String
+  sales       Int        @default(0)
+  status      BookStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  categoryId  String
+  category    Category   @relation(fields: [categoryId], references: [id])
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+  book      Book     @relation(fields: [bookId], references: [id])
+
+  @@unique([userId, bookId])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  userId       String
+  recipient    String
+  phone        String
+  line1        String
+  city         String
+  state        String
+  postalCode   String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Order {
+  id            String       @id @default(cuid())
+  userId        String
+  status        OrderStatus  @default(PENDING_PAYMENT)
+  paymentMethod PaymentMethod
+  totalCents    Int
+  recipient     String
+  phone         String
+  line1         String
+  city          String
+  state         String
+  postalCode    String
+  rating        Int?
+  reviewText    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  user          User         @relation(fields: [userId], references: [id])
+  items         OrderItem[]
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  bookId    String
+  title     String
+  author    String
+  coverUrl  String
+  priceCents Int
+  quantity  Int
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id])
+  book      Book     @relation(fields: [bookId], references: [id])
+}

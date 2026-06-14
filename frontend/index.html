@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>智慧书店一体化平台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app" class="min-h-screen">
+      <header class="px-6 py-5">
+        <div class="card px-6 py-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Bookshop Pro</p>
+            <h1 class="text-2xl font-semibold">智慧书店一体化平台</h1>
+            <p class="text-sm text-slate-500">管理员与用户权限分流，完整订单闭环</p>
+          </div>
+          <div class="flex flex-wrap gap-3 items-center">
+            <div id="user-chip" class="hidden badge"></div>
+            <button id="login-btn" class="btn-primary">登录</button>
+            <button id="logout-btn" class="btn-outline hidden">退出</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="px-6 pb-10">
+        <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+          <aside class="card p-5 space-y-3" aria-label="导航菜单">
+            <button data-view="books" class="nav-btn btn-secondary w-full justify-start">书籍查询</button>
+            <button data-view="cart" class="nav-btn btn-secondary w-full justify-start">购物车</button>
+            <button data-view="orders" class="nav-btn btn-secondary w-full justify-start">我的订单</button>
+            <button data-view="profile" class="nav-btn btn-secondary w-full justify-start">个人中心</button>
+            <div id="admin-nav" class="pt-3 border-t border-slate-200">
+              <p class="text-xs uppercase tracking-[0.2em] text-slate-400 mb-2">管理员入口</p>
+              <button data-view="admin" class="nav-btn btn-secondary w-full justify-start">管理控制台</button>
+            </div>
+          </aside>
+
+          <section class="space-y-6" id="view-container">
+            <div class="card p-6" id="view-title">
+              <h2 class="text-xl font-semibold">欢迎来到 Bookshop Pro</h2>
+              <p class="text-sm text-slate-500">请登录后使用完整功能。</p>
+            </div>
+            <div id="view-content" class="space-y-6"></div>
+          </section>
+        </div>
+      </main>
+
+      <footer class="px-6 pb-8 text-xs text-slate-500">
+        <div class="card px-4 py-3">© 2026 Bookshop Pro. 现代化书店管理与订购系统。</div>
+      </footer>
+    </div>
+
+    <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4"></div>
+    <div id="toast" class="fixed left-1/2 top-[42%] z-50 flex w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
