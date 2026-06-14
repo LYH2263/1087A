@@ -149,6 +149,102 @@ export function bindEventHandlers({
   openForgotModal,
   openResetModal
 }) {
+  async function loadStockWarnings() {
+    const data = await api.admin.getStockWarnings();
+    state.admin.stockWarnings = data.books;
+    state.admin.stockWarningStats = { total: data.total, zeroStockCount: data.zeroStockCount };
+  }
+
+  async function loadStockThreshold() {
+    state.admin.stockThreshold = await api.admin.getStockThreshold();
+  }
+
+  async function loadRestockLogs(page = 1) {
+    const data = await api.admin.getRestockLogs({ page, pageSize: state.admin.restockLogStats.pageSize });
+    state.admin.restockLogs = data.logs;
+    state.admin.restockLogStats = { total: data.total, page: data.page, pageSize: data.pageSize };
+  }
+
+  function openSetThresholdModal(bookId, bookTitle, currentThreshold) {
+    const isGlobal = !bookId;
+    const title = isGlobal ? '设置全局低库存阈值' : `设置「${bookTitle}」的低库存阈值`;
+    const hint = isGlobal ? '所有未单独设置阈值的书籍将使用此阈值' : '设置后将覆盖全局阈值';
+    openModal(`
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold">${title}</h3>
+        <p class="text-sm text-slate-500">${hint}</p>
+        <form data-form="set-threshold" data-book-id="${bookId || ''}" novalidate>
+          <div class="space-y-2">
+            <label class="text-sm text-slate-600">低库存阈值（本）</label>
+            <input class="input input-lg" name="threshold" type="number" min="0" value="${currentThreshold || 10}" required placeholder="请输入阈值" />
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+            <button type="submit" class="btn-primary">确认设置</button>
+          </div>
+        </form>
+      </div>
+    `);
+  }
+
+  function openSingleRestockModal(bookId, bookTitle, currentStock, threshold) {
+    const suggestedQty = Math.max(threshold - currentStock, 10);
+    openModal(`
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold">「${bookTitle}」补货</h3>
+        <div class="bg-slate-50 rounded-lg p-3 space-y-1 text-sm">
+          <p>当前库存：<span class="font-semibold ${currentStock === 0 ? 'text-red-600' : 'text-amber-600'}">${currentStock} 本</span></p>
+          <p>预警阈值：<span class="font-semibold">${threshold} 本</span></p>
+          <p>建议补货：<span class="font-semibold text-emerald-600">${suggestedQty} 本（补足到阈值 + 10 本安全库存）</span></p>
+        </div>
+        <form data-form="single-restock" data-book-id="${bookId}" novalidate>
+          <div class="space-y-2">
+            <label class="text-sm text-slate-600">补货数量（本）</label>
+            <input class="input input-lg" name="quantity" type="number" min="1" value="${suggestedQty}" required placeholder="请输入补货数量" />
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+            <button type="submit" class="btn-primary">确认补货</button>
+          </div>
+        </form>
+      </div>
+    `);
+  }
+
+  function openBatchRestockModal() {
+    const selectedBooks = state.admin.stockWarnings.filter(b => state.admin.selectedRestockBooks.has(b.id));
+    if (selectedBooks.length === 0) {
+      showToast('请先选择需要补货的书籍', 'error');
+      return;
+    }
+
+    const bookList = selectedBooks.map(b => `
+      <div class="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+        <div>
+          <p class="font-medium text-sm">${b.title}</p>
+          <p class="text-xs text-slate-500">当前库存：${b.stock} / 阈值：${b.threshold}</p>
+        </div>
+        <input class="input w-24" name="qty_${b.id}" type="number" min="1" value="${Math.max(b.threshold - b.stock, 10)}" required />
+      </div>
+    `).join('');
+
+    openModal(`
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold">批量补货</h3>
+        <p class="text-sm text-slate-500">已选择 ${selectedBooks.length} 本书籍，请分别设置补货数量</p>
+        <form data-form="batch-restock" novalidate>
+          <div class="space-y-2 max-h-80 overflow-y-auto">
+            ${bookList}
+          </div>
+          <div class="flex justify-between items-center mt-4 pt-4 border-t border-slate-200">
+            <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+            <button type="submit" class="btn-primary">确认批量补货</button>
+          </div>
+        </form>
+      </div>
+    `);
+  }
+
   const modalActionHandlers = {
     'close-modal': closeModal,
     'show-register': openRegisterModal,
@@ -229,6 +325,55 @@ export function bindEventHandlers({
       await loadOrders();
       safeRender();
       showToast('评价已提交', 'success');
+    },
+    'set-threshold': async (form) => {
+      const data = getFormData(form);
+      const bookId = form.dataset.bookId || undefined;
+      const threshold = parseInt(data.threshold, 10);
+      if (isNaN(threshold) || threshold < 0) {
+        throw new Error('请输入有效的阈值');
+      }
+      await api.admin.setStockThreshold({ threshold, bookId });
+      closeModal();
+      await Promise.all([loadStockThreshold(), loadStockWarnings(), loadAdmin()]);
+      safeRender();
+      showToast(bookId ? '单品阈值已更新' : '全局阈值已更新', 'success');
+    },
+    'single-restock': async (form) => {
+      const data = getFormData(form);
+      const bookId = form.dataset.bookId;
+      const quantity = parseInt(data.quantity, 10);
+      if (isNaN(quantity) || quantity < 1) {
+        throw new Error('请输入有效的补货数量');
+      }
+      await api.admin.restockBook({ bookId, quantity });
+      closeModal();
+      await Promise.all([loadStockWarnings(), loadAdmin(), loadRestockLogs(1)]);
+      state.admin.selectedRestockBooks.delete(bookId);
+      safeRender();
+      showToast('补货成功', 'success');
+    },
+    'batch-restock': async (form) => {
+      const data = getFormData(form);
+      const items = [];
+      for (const [key, value] of Object.entries(data)) {
+        if (key.startsWith('qty_')) {
+          const bookId = key.replace('qty_', '');
+          const quantity = parseInt(value, 10);
+          if (!isNaN(quantity) && quantity > 0) {
+            items.push({ bookId, quantity });
+          }
+        }
+      }
+      if (items.length === 0) {
+        throw new Error('请输入有效的补货数量');
+      }
+      const result = await api.admin.batchRestock({ items });
+      closeModal();
+      await Promise.all([loadStockWarnings(), loadAdmin(), loadRestockLogs(1)]);
+      state.admin.selectedRestockBooks.clear();
+      safeRender();
+      showToast(`批量补货成功，共补货 ${result.results.length} 本书籍`, 'success');
     }
   };
 
@@ -527,6 +672,79 @@ export function bindEventHandlers({
       link.download = 'orders.csv';
       link.click();
       URL.revokeObjectURL(url);
+    },
+    'set-global-threshold': async (target) => {
+      const current = target.dataset.current || 10;
+      openSetThresholdModal(null, null, current);
+    },
+    'set-book-threshold': async (target) => {
+      const bookId = target.dataset.id;
+      const bookTitle = target.dataset.title;
+      const current = target.dataset.current || '';
+      openSetThresholdModal(bookId, bookTitle, current);
+    },
+    'delete-book-threshold': async (target) => {
+      const bookId = target.dataset.id;
+      const bookTitle = target.dataset.title;
+      if (!confirm(`确定要删除「${bookTitle}」的单品阈值配置吗？删除后将使用全局阈值。`)) {
+        return;
+      }
+      await api.admin.deleteBookThreshold(bookId);
+      await Promise.all([loadStockThreshold(), loadStockWarnings(), loadAdmin()]);
+      safeRender();
+      showToast('已删除单品阈值，将使用全局阈值', 'success');
+    },
+    'quick-restock': async (target) => {
+      const bookId = target.dataset.id;
+      const bookTitle = target.dataset.title;
+      const book = state.admin.books.find(b => b.id === bookId);
+      const threshold = state.admin.stockThreshold?.bookThresholds?.find(bt => bt.bookId === bookId)?.threshold
+        ?? state.admin.stockThreshold?.global?.threshold ?? 10;
+      openSingleRestockModal(bookId, bookTitle, book?.stock ?? 0, threshold);
+    },
+    'single-restock': async (target) => {
+      const bookId = target.dataset.id;
+      const bookTitle = target.dataset.title;
+      const currentStock = parseInt(target.dataset.stock, 10) || 0;
+      const threshold = parseInt(target.dataset.threshold, 10) || 10;
+      openSingleRestockModal(bookId, bookTitle, currentStock, threshold);
+    },
+    'toggle-restock-select': async (target) => {
+      const bookId = target.dataset.id;
+      if (target.checked) {
+        state.admin.selectedRestockBooks.add(bookId);
+      } else {
+        state.admin.selectedRestockBooks.delete(bookId);
+      }
+      safeRender();
+    },
+    'toggle-select-all': async (target) => {
+      if (target.checked) {
+        state.admin.stockWarnings.forEach(book => {
+          state.admin.selectedRestockBooks.add(book.id);
+        });
+      } else {
+        state.admin.selectedRestockBooks.clear();
+      }
+      safeRender();
+    },
+    'batch-restock': async () => {
+      openBatchRestockModal();
+    },
+    'restock-log-prev': async () => {
+      const currentPage = state.admin.restockLogStats.page;
+      if (currentPage > 1) {
+        await loadRestockLogs(currentPage - 1);
+        safeRender();
+      }
+    },
+    'restock-log-next': async () => {
+      const currentPage = state.admin.restockLogStats.page;
+      const totalPages = Math.ceil(state.admin.restockLogStats.total / state.admin.restockLogStats.pageSize);
+      if (currentPage < totalPages) {
+        await loadRestockLogs(currentPage + 1);
+        safeRender();
+      }
     }
   };
 

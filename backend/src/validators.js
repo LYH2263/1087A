@@ -129,6 +129,23 @@ const wishlistAddSchema = z.object({
   bookId: z.string().min(1)
 });
 
+const stockThresholdSchema = z.object({
+  threshold: z.number().int().min(0),
+  bookId: z.string().optional()
+});
+
+const singleRestockSchema = z.object({
+  bookId: z.string().min(1),
+  quantity: z.number().int().min(1)
+});
+
+const batchRestockSchema = z.object({
+  items: z.array(z.object({
+    bookId: z.string().min(1),
+    quantity: z.number().int().min(1)
+  })).min(1)
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -145,5 +162,8 @@ module.exports = {
   createCouponSchema,
   updateCouponSchema,
   claimCouponSchema,
-  wishlistAddSchema
+  wishlistAddSchema,
+  stockThresholdSchema,
+  singleRestockSchema,
+  batchRestockSchema
 };

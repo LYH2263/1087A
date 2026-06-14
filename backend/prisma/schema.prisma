@@ -96,23 +96,25 @@ model Category {
 }
 
 model Book {
-  id          String     @id @default(cuid())
-  title       String
-  author      String
-  isbn        String     @unique
-  description String
-  priceCents  Int
-  stock       Int
-  coverUrl    String
-  sales       Int        @default(0)
-  status      BookStatus @default(ACTIVE)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  categoryId  String
-  category    Category   @relation(fields: [categoryId], references: [id])
-  cartItems   CartItem[]
-  wishlistItems WishlistItem[]
-  orderItems  OrderItem[]
+  id              String             @id @default(cuid())
+  title           String
+  author          String
+  isbn            String             @unique
+  description     String
+  priceCents      Int
+  stock           Int
+  coverUrl        String
+  sales           Int                @default(0)
+  status          BookStatus         @default(ACTIVE)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  categoryId      String
+  category        Category           @relation(fields: [categoryId], references: [id])
+  cartItems       CartItem[]
+  wishlistItems   WishlistItem[]
+  orderItems      OrderItem[]
+  stockThreshold  StockThreshold?
+  restockLogs     StockRestockLog[]
 }
 
 model CartItem {
@@ -230,4 +232,25 @@ model UserCoupon {
   usedOrders Order[]
 
   @@unique([userId, couponId])
+}
+
+model StockThreshold {
+  id        String   @id @default(cuid())
+  bookId    String?  @unique
+  threshold Int
+  isGlobal  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  book      Book?    @relation(fields: [bookId], references: [id])
+}
+
+model StockRestockLog {
+  id        String   @id @default(cuid())
+  bookId    String
+  quantity  Int
+  oldStock  Int
+  newStock  Int
+  operator  String
+  createdAt DateTime @default(now())
+  book      Book     @relation(fields: [bookId], references: [id])
 }

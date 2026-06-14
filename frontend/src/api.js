@@ -356,6 +356,40 @@ export const api = {
     },
     getCouponStats() {
       return request('/admin/coupons/stats/overview');
+    },
+    getStockThreshold() {
+      return request('/admin/stock/threshold');
+    },
+    setStockThreshold(payload) {
+      return request('/admin/stock/threshold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    deleteBookThreshold(bookId) {
+      return request(`/admin/stock/threshold/${bookId}`, { method: 'DELETE' });
+    },
+    getStockWarnings() {
+      return request('/admin/stock/warnings');
+    },
+    restockBook(payload) {
+      return request('/admin/stock/restock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    batchRestock(payload) {
+      return request('/admin/stock/restock/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    getRestockLogs(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      return request(`/admin/stock/restock-logs${query ? `?${query}` : ''}`);
     }
   }
 };

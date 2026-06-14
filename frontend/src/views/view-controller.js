@@ -395,6 +395,8 @@ export function createViewController({
         <button class="btn-outline" data-action="admin-tab" data-tab="books">书籍管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="categories">分类管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="orders">订单管理</button>
+        <button class="btn-outline" data-action="admin-tab" data-tab="stock">库存预警</button>
+        <button class="btn-outline" data-action="admin-tab" data-tab="restock-logs">补货流水</button>
       </div>
     `;
 
@@ -407,30 +409,45 @@ export function createViewController({
         )
         .join('');
 
+      const globalThreshold = state.admin.stockThreshold?.global?.threshold ?? 10;
+      const bookThresholdMap = new Map(
+        (state.admin.stockThreshold?.bookThresholds || []).map(bt => [bt.bookId, bt.threshold])
+      );
+
       const bookRows = state.admin.books
         .map(
-          (book) => `
-        <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-3 hover-card">
+          (book) => {
+            const threshold = bookThresholdMap.get(book.id) ?? globalThreshold;
+            const isLowStock = book.stock < threshold;
+            const isZeroStock = book.stock === 0;
+            return `
+        <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-3 hover-card ${isZeroStock ? 'border-red-300 bg-red-50' : isLowStock ? 'border-amber-300 bg-amber-50' : ''}">
           <div class="flex justify-between">
-            <div>
-              <h4 class="font-semibold">${book.title}</h4>
-              <p class="text-sm text-slate-500">${book.author} · ${book.isbn}</p>
+            <div class="flex items-start gap-2">
+              <div>
+                <h4 class="font-semibold">${book.title}</h4>
+                <p class="text-sm text-slate-500">${book.author} · ${book.isbn}</p>
+              </div>
+              ${isZeroStock ? '<span class="badge bg-red-500 text-white">缺货</span>' : isLowStock ? '<span class="badge bg-amber-500 text-white">库存低</span>' : ''}
             </div>
             <span class="badge ${book.status === 'ACTIVE' ? 'badge-active' : 'badge-inactive'}">${book.status === 'ACTIVE' ? '上架中' : '已下架'}</span>
           </div>
           <div class="flex flex-wrap gap-2 text-sm text-slate-600">
             <span>价格：${formatCurrency(book.price)}</span>
-            <span>库存：${book.stock}</span>
+            <span class="${isLowStock ? 'text-amber-600 font-semibold' : ''}">库存：${book.stock} / 阈值：${threshold}</span>
             <span>分类：${book.category?.name || '-'}</span>
           </div>
           <div class="flex flex-wrap gap-2">
             <button class="btn-outline" data-action="edit-book" data-id="${book.id}">编辑</button>
+            <button class="btn-outline" data-action="set-book-threshold" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-current="${bookThresholdMap.get(book.id) ?? ''}">设置阈值</button>
+            ${isLowStock ? `<button class="btn-primary" data-action="quick-restock" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">补货</button>` : ''}
             ${book.status === 'ACTIVE'
               ? `<button class="btn-outline" data-action="deactivate-book" data-id="${book.id}">下架</button>`
               : `<button class="btn-outline" data-action="restore-book" data-id="${book.id}">上架</button>`}
           </div>
         </div>
-      `
+      `;
+          }
         )
         .join('');
 
@@ -552,6 +569,164 @@ export function createViewController({
           </div>
         </div>
         <div class="grid lg:grid-cols-2 gap-4">${orderCards || '<div class="text-slate-500">暂无订单</div>'}</div>
+      `;
+    }
+
+    if (state.admin.tab === 'stock') {
+      const warningStats = state.admin.stockWarningStats || { total: 0, zeroStockCount: 0 };
+      const globalThreshold = state.admin.stockThreshold?.global?.threshold ?? 10;
+      const selectedCount = state.admin.selectedRestockBooks.size;
+      const allSelected = state.admin.stockWarnings.length > 0 && state.admin.selectedRestockBooks.size === state.admin.stockWarnings.length;
+
+      const warningRows = state.admin.stockWarnings
+        .map(
+          (book) => {
+            const isSelected = state.admin.selectedRestockBooks.has(book.id);
+            return `
+        <div class="border ${book.isZeroStock ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'} rounded-xl p-4 flex flex-col gap-3 hover-card">
+          <div class="flex items-start gap-3">
+            <input type="checkbox" class="mt-1" data-action="toggle-restock-select" data-id="${book.id}" ${isSelected ? 'checked' : ''} />
+            <div class="flex-1">
+              <div class="flex justify-between items-start">
+                <div>
+                  <h4 class="font-semibold">${book.title}</h4>
+                  <p class="text-sm text-slate-500">${book.author} · ${book.isbn}</p>
+                </div>
+                <div class="flex gap-2">
+                  ${book.isZeroStock ? '<span class="badge bg-red-500 text-white">缺货</span>' : '<span class="badge bg-amber-500 text-white">库存低</span>'}
+                  <span class="badge bg-slate-600 text-white">缺口 ${book.gap}</span>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-3 mt-2 text-sm">
+                <span class="${book.isZeroStock ? 'text-red-600 font-semibold' : 'text-amber-600 font-semibold'}">当前库存：${book.stock}</span>
+                <span>预警阈值：${book.threshold}</span>
+                <span>分类：${book.category?.name || '-'}</span>
+              </div>
+              <div class="flex flex-wrap gap-2 mt-3">
+                <button class="btn-outline" data-action="set-book-threshold" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-current="${book.threshold}">调整阈值</button>
+                <button class="btn-primary" data-action="single-restock" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-stock="${book.stock}" data-threshold="${book.threshold}">单条补货</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+          }
+        )
+        .join('');
+
+      content = `
+        <div class="card p-6 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h3 class="text-lg font-semibold">库存预警</h3>
+              <p class="text-sm text-slate-500">低于阈值的书籍将显示在此处，按缺口排序</p>
+            </div>
+            <button class="btn-outline" data-action="set-global-threshold" data-current="${globalThreshold}">设置全局阈值</button>
+          </div>
+          <div class="grid md:grid-cols-3 gap-3">
+            <div class="bg-red-50 rounded-xl p-3">
+              <p class="text-xs text-slate-400">预警书籍总数</p>
+              <p class="text-lg font-semibold text-red-600">${warningStats.total}</p>
+            </div>
+            <div class="bg-amber-50 rounded-xl p-3">
+              <p class="text-xs text-slate-400">缺货书籍</p>
+              <p class="text-lg font-semibold text-amber-600">${warningStats.zeroStockCount}</p>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-3">
+              <p class="text-xs text-slate-400">全局阈值</p>
+              <p class="text-lg font-semibold">${globalThreshold} 本</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-6 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <label class="flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" data-action="toggle-select-all" ${allSelected ? 'checked' : ''} ${state.admin.stockWarnings.length === 0 ? 'disabled' : ''} />
+                全选
+              </label>
+              <span class="text-sm text-slate-500">已选 ${selectedCount} 项</span>
+            </div>
+            <button class="btn-primary" data-action="batch-restock" ${selectedCount === 0 ? 'disabled' : ''}>
+              ${selectedCount > 0 ? `批量补货 (${selectedCount})` : '批量补货'}
+            </button>
+          </div>
+          ${state.admin.stockWarnings.length === 0
+            ? '<div class="text-slate-500 text-center py-8">暂无库存预警，所有书籍库存充足！</div>'
+            : `<div class="space-y-3">${warningRows}</div>`
+          }
+        </div>
+
+        <div class="card p-6 space-y-4">
+          <h3 class="text-lg font-semibold">单品阈值配置</h3>
+          <div class="space-y-2">
+            ${state.admin.stockThreshold?.bookThresholds?.length === 0
+              ? '<p class="text-sm text-slate-500">暂无单品阈值配置，所有书籍使用全局阈值</p>'
+              : state.admin.stockThreshold.bookThresholds.map(bt => `
+                <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  <div>
+                    <p class="font-medium">${bt.bookTitle}</p>
+                    <p class="text-xs text-slate-500">阈值：${bt.threshold} 本</p>
+                  </div>
+                  <button class="btn-outline text-sm" data-action="delete-book-threshold" data-id="${bt.bookId}" data-title="${escapeHtmlAttr(bt.bookTitle)}">删除</button>
+                </div>
+              `).join('')
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    if (state.admin.tab === 'restock-logs') {
+      const logStats = state.admin.restockLogStats || { total: 0, page: 1, pageSize: 20 };
+      const totalPages = Math.ceil(logStats.total / logStats.pageSize);
+
+      const logRows = state.admin.restockLogs
+        .map(
+          (log) => `
+        <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
+          <div class="flex justify-between items-start">
+            <div>
+              <h4 class="font-semibold">${log.bookTitle}</h4>
+              <p class="text-xs text-slate-500">操作时间：${new Date(log.createdAt).toLocaleString('zh-CN')}</p>
+            </div>
+            <span class="badge bg-emerald-500 text-white">+${log.quantity}</span>
+          </div>
+          <div class="flex flex-wrap gap-3 text-sm text-slate-600">
+            <span>补货前：${log.oldStock} 本</span>
+            <span>→</span>
+            <span>补货后：${log.newStock} 本</span>
+            <span>操作人：${log.operator}</span>
+          </div>
+        </div>
+      `
+        )
+        .join('');
+
+      content = `
+        <div class="card p-6 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h3 class="text-lg font-semibold">补货流水</h3>
+              <p class="text-sm text-slate-500">所有补货操作的记录</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-slate-500">共 ${logStats.total} 条记录</span>
+            </div>
+          </div>
+          ${state.admin.restockLogs.length === 0
+            ? '<div class="text-slate-500 text-center py-8">暂无补货记录</div>'
+            : `<div class="space-y-3">${logRows}</div>`
+          }
+          ${totalPages > 1 ? `
+          <div class="flex justify-center gap-2 pt-4">
+            <button class="btn-outline" data-action="restock-log-prev" ${logStats.page <= 1 ? 'disabled' : ''}>上一页</button>
+            <span class="px-3 py-2 text-sm text-slate-600">第 ${logStats.page} / ${totalPages} 页</span>
+            <button class="btn-outline" data-action="restock-log-next" ${logStats.page >= totalPages ? 'disabled' : ''}>下一页</button>
+          </div>
+          ` : ''}
+        </div>
       `;
     }
 

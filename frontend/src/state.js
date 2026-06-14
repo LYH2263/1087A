@@ -30,7 +30,13 @@ export const state = {
     categories: [],
     orders: [],
     stats: null,
-    editingBook: null
+    editingBook: null,
+    stockWarnings: [],
+    stockWarningStats: { total: 0, zeroStockCount: 0 },
+    stockThreshold: { global: { threshold: 10 }, bookThresholds: [] },
+    restockLogs: [],
+    restockLogStats: { total: 0, page: 1, pageSize: 20 },
+    selectedRestockBooks: new Set()
   },
   profile: {
     editingAddress: null

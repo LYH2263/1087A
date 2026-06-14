@@ -129,10 +129,24 @@ async function loadAddresses() {
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
-  state.admin.books = await api.admin.getBooks();
-  state.admin.categories = await api.admin.getCategories();
-  state.admin.orders = await api.admin.getOrders();
-  state.admin.stats = await api.admin.getOrderStats();
+  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs] = await Promise.all([
+    api.admin.getBooks(),
+    api.admin.getCategories(),
+    api.admin.getOrders(),
+    api.admin.getOrderStats(),
+    api.admin.getStockThreshold(),
+    api.admin.getStockWarnings(),
+    api.admin.getRestockLogs({ page: 1, pageSize: 20 })
+  ]);
+  state.admin.books = books;
+  state.admin.categories = categories;
+  state.admin.orders = orders;
+  state.admin.stats = stats;
+  state.admin.stockThreshold = stockThreshold;
+  state.admin.stockWarnings = stockWarnings.books;
+  state.admin.stockWarningStats = { total: stockWarnings.total, zeroStockCount: stockWarnings.zeroStockCount };
+  state.admin.restockLogs = restockLogs.logs;
+  state.admin.restockLogStats = { total: restockLogs.total, page: restockLogs.page, pageSize: restockLogs.pageSize };
   state.loading.admin = false;
 }
 

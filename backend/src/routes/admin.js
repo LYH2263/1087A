@@ -5,7 +5,7 @@ const multer = require('multer');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema } = require('../validators');
+const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 const { generateCouponCode } = require('../utils/coupon');
 
@@ -523,6 +523,236 @@ router.get('/coupons/stats/overview', asyncHandler(async (req, res) => {
       acc[item.status] = item._count._all;
       return acc;
     }, {})
+  });
+}));
+
+router.get('/stock/threshold', asyncHandler(async (req, res) => {
+  const globalThreshold = await prisma.stockThreshold.findFirst({
+    where: { isGlobal: true }
+  });
+
+  const bookThresholds = await prisma.stockThreshold.findMany({
+    where: { isGlobal: false, bookId: { not: null } },
+    include: { book: { select: { id: true, title: true } } }
+  });
+
+  res.json({
+    global: globalThreshold ? { threshold: globalThreshold.threshold } : { threshold: 10 },
+    bookThresholds: bookThresholds.map(bt => ({
+      id: bt.id,
+      bookId: bt.bookId,
+      bookTitle: bt.book?.title,
+      threshold: bt.threshold
+    }))
+  });
+}));
+
+router.post('/stock/threshold', asyncHandler(async (req, res) => {
+  const payload = stockThresholdSchema.parse(req.body);
+
+  if (payload.bookId) {
+    const book = await prisma.book.findUnique({ where: { id: payload.bookId } });
+    if (!book) {
+      throw new ApiError(404, 'BOOK_NOT_FOUND');
+    }
+
+    const threshold = await prisma.stockThreshold.upsert({
+      where: { bookId: payload.bookId },
+      update: { threshold: payload.threshold },
+      create: {
+        bookId: payload.bookId,
+        threshold: payload.threshold,
+        isGlobal: false
+      }
+    });
+
+    res.json({
+      id: threshold.id,
+      bookId: threshold.bookId,
+      threshold: threshold.threshold
+    });
+  } else {
+    const threshold = await prisma.stockThreshold.upsert({
+      where: { isGlobal: true, bookId: null },
+      update: { threshold: payload.threshold },
+      create: {
+        threshold: payload.threshold,
+        isGlobal: true
+      }
+    });
+
+    res.json({
+      id: threshold.id,
+      threshold: threshold.threshold,
+      isGlobal: true
+    });
+  }
+}));
+
+router.delete('/stock/threshold/:bookId', asyncHandler(async (req, res) => {
+  await prisma.stockThreshold.deleteMany({
+    where: { bookId: req.params.bookId }
+  });
+  res.json({ message: 'threshold deleted' });
+}));
+
+router.get('/stock/warnings', asyncHandler(async (req, res) => {
+  const globalThreshold = await prisma.stockThreshold.findFirst({
+    where: { isGlobal: true }
+  });
+  const defaultThreshold = globalThreshold?.threshold ?? 10;
+
+  const booksWithThresholds = await prisma.book.findMany({
+    where: { status: 'ACTIVE' },
+    include: { stockThreshold: true, category: true }
+  });
+
+  const warningBooks = booksWithThresholds
+    .map(book => {
+      const threshold = book.stockThreshold?.threshold ?? defaultThreshold;
+      const gap = threshold - book.stock;
+      return {
+        ...mapBook(book),
+        threshold,
+        gap,
+        isLowStock: book.stock < threshold,
+        isZeroStock: book.stock === 0
+      };
+    })
+    .filter(book => book.isLowStock)
+    .sort((a, b) => b.gap - a.gap);
+
+  res.json({
+    total: warningBooks.length,
+    zeroStockCount: warningBooks.filter(b => b.isZeroStock).length,
+    books: warningBooks
+  });
+}));
+
+router.post('/stock/restock', asyncHandler(async (req, res) => {
+  const payload = singleRestockSchema.parse(req.body);
+  const operatorId = req.user.id;
+
+  const result = await prisma.$transaction(async (tx) => {
+    const book = await tx.book.findUnique({
+      where: { id: payload.bookId }
+    });
+
+    if (!book) {
+      throw new ApiError(404, 'BOOK_NOT_FOUND');
+    }
+
+    const oldStock = book.stock;
+    const newStock = oldStock + payload.quantity;
+
+    await tx.book.update({
+      where: { id: payload.bookId },
+      data: { stock: newStock }
+    });
+
+    const log = await tx.stockRestockLog.create({
+      data: {
+        bookId: payload.bookId,
+        quantity: payload.quantity,
+        oldStock,
+        newStock,
+        operator: operatorId
+      }
+    });
+
+    return { bookId: payload.bookId, oldStock, newStock, quantity: payload.quantity, logId: log.id };
+  });
+
+  res.json(result);
+}));
+
+router.post('/stock/restock/batch', asyncHandler(async (req, res) => {
+  const payload = batchRestockSchema.parse(req.body);
+  const operatorId = req.user.id;
+
+  const results = await prisma.$transaction(async (tx) => {
+    const results = [];
+
+    for (const item of payload.items) {
+      const book = await tx.book.findUnique({
+        where: { id: item.bookId }
+      });
+
+      if (!book) {
+        throw new ApiError(404, `BOOK_NOT_FOUND: ${item.bookId}`);
+      }
+
+      const oldStock = book.stock;
+      const newStock = oldStock + item.quantity;
+
+      await tx.book.update({
+        where: { id: item.bookId },
+        data: { stock: newStock }
+      });
+
+      const log = await tx.stockRestockLog.create({
+        data: {
+          bookId: item.bookId,
+          quantity: item.quantity,
+          oldStock,
+          newStock,
+          operator: operatorId
+        }
+      });
+
+      results.push({
+        bookId: item.bookId,
+        bookTitle: book.title,
+        oldStock,
+        newStock,
+        quantity: item.quantity,
+        logId: log.id
+      });
+    }
+
+    return results;
+  });
+
+  res.json({ success: true, results });
+}));
+
+router.get('/stock/restock-logs', asyncHandler(async (req, res) => {
+  const { page = 1, pageSize = 20, bookId } = req.query;
+  const skip = (Number(page) - 1) * Number(pageSize);
+  const take = Number(pageSize);
+
+  const where = {};
+  if (bookId) {
+    where.bookId = String(bookId);
+  }
+
+  const [logs, total] = await Promise.all([
+    prisma.stockRestockLog.findMany({
+      where,
+      include: {
+        book: { select: { id: true, title: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take
+    }),
+    prisma.stockRestockLog.count({ where })
+  ]);
+
+  res.json({
+    total,
+    page: Number(page),
+    pageSize: Number(pageSize),
+    logs: logs.map(log => ({
+      id: log.id,
+      bookId: log.bookId,
+      bookTitle: log.book?.title,
+      quantity: log.quantity,
+      oldStock: log.oldStock,
+      newStock: log.newStock,
+      operator: log.operator,
+      createdAt: log.createdAt
+    }))
   });
 }));
 
