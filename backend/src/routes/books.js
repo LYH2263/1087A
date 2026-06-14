@@ -102,6 +102,47 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(books.map(mapBook));
 }));
 
+router.get('/suggest', asyncHandler(async (req, res) => {
+  const { q, limit = 8, sort = 'sales' } = req.query;
+  const keyword = String(q || '').trim();
+  if (!keyword) {
+    return res.json([]);
+  }
+  const maxLimit = Math.min(parseInt(limit, 10) || 8, 20);
+  const where = {
+    status: 'ACTIVE',
+    OR: [
+      { title: { contains: keyword, mode: 'insensitive' } },
+      { author: { contains: keyword, mode: 'insensitive' } }
+    ]
+  };
+  let orderBy = { sales: 'desc' };
+  if (sort === 'relevance') {
+    orderBy = { createdAt: 'desc' };
+  }
+  const books = await prisma.book.findMany({
+    where,
+    select: {
+      id: true,
+      title: true,
+      author: true,
+      coverUrl: true,
+      sales: true,
+      priceCents: true
+    },
+    orderBy,
+    take: maxLimit
+  });
+  res.json(books.map((b) => ({
+    id: b.id,
+    title: b.title,
+    author: b.author,
+    coverUrl: b.coverUrl,
+    sales: b.sales,
+    price: fromCents(b.priceCents)
+  })));
+}));
+
 router.get('/categories', asyncHandler(async (req, res) => {
   const categories = await prisma.category.findMany({
     orderBy: { name: 'asc' }

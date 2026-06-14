@@ -136,6 +136,10 @@ export const api = {
   getMe() {
     return request('/auth/me');
   },
+  suggestBooks(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/books/suggest${query ? `?${query}` : ''}`);
+  },
   getBooks(params = {}) {
     const query = new URLSearchParams(params).toString();
     return request(`/books${query ? `?${query}` : ''}`);

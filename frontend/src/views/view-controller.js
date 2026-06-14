@@ -1,3 +1,5 @@
+import { escapeHtml } from '../state';
+
 export function createViewController({
   state,
   viewContent,
@@ -117,11 +119,21 @@ export function createViewController({
     `;
   }
 
+  function highlightKeyword(text, keyword) {
+    if (!keyword) return escapeHtml(text);
+    const escaped = escapeHtml(text);
+    const escapedKw = escapeHtml(keyword);
+    const regex = new RegExp(`(${escapedKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return escaped.replace(regex, '<mark class="suggest-highlight">$1</mark>');
+  }
+
   function renderBooks() {
     const search = state.bookSearch;
     const categoryOptions = state.categories
       .map((cat) => `<option value="${cat.id}" ${search.categoryId === cat.id ? 'selected' : ''}>${cat.name}</option>`)
       .join('');
+
+    const highlightKw = search.title || '';
 
     const bookCards = state.books
       .map(
@@ -134,14 +146,14 @@ export function createViewController({
           return `
         <div class="card hover-card p-4 flex flex-col gap-3">
           <div class="relative rounded-xl overflow-hidden h-44 bg-slate-100">
-            <img src="${effectiveCover}" alt="${book.title}" class="w-full h-full object-contain" />
+            <img src="${effectiveCover}" alt="${escapeHtml(book.title)}" class="w-full h-full object-contain" />
             <button class="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-lg transition hover:scale-110 ${favorited ? 'text-red-500' : 'text-slate-400 hover:text-red-400'}" data-action="toggle-favorite" data-id="${book.id}" title="${favorited ? '取消收藏' : '收藏'}">
               ${favorited ? '♥' : '♡'}
             </button>
           </div>
           <div>
-            <h3 class="font-semibold text-lg">${book.title}</h3>
-            <p class="text-sm text-slate-500">${book.author}</p>
+            <h3 class="font-semibold text-lg">${highlightKeyword(book.title, highlightKw)}</h3>
+            <p class="text-sm text-slate-500">${highlightKeyword(book.author, highlightKw)}</p>
             ${book.hasSpecs ? `<div class="flex flex-wrap gap-2 mt-2"><span class="badge">多规格</span></div>` : `<div class="flex flex-wrap gap-2 mt-2"><span class="badge">库存 ${effectiveStock}</span><span class="badge">销量 ${book.sales}</span></div>`}
             ${renderSpecSelector(book)}
           </div>
@@ -168,7 +180,10 @@ export function createViewController({
     viewContent.innerHTML = `
       <div class="card p-5">
         <form class="grid md:grid-cols-6 gap-3" data-form="book-search" novalidate>
-          <input class="input md:col-span-2" name="title" placeholder="书名" value="${escapeHtmlAttr(search.title)}" />
+          <div class="md:col-span-2 relative">
+            <input class="input w-full" name="title" placeholder="书名" value="${escapeHtmlAttr(search.title)}" autocomplete="off" />
+            <div id="suggest-dropdown" class="suggest-dropdown"></div>
+          </div>
           <input class="input" name="author" placeholder="作者" value="${escapeHtmlAttr(search.author)}" />
           <input class="input" name="isbn" placeholder="ISBN" value="${escapeHtmlAttr(search.isbn)}" />
           <select class="input" name="categoryId">

@@ -3,6 +3,7 @@ import { api } from './api';
 import { state, normalizeBookSearch, escapeHtmlAttr } from './state';
 import { createViewController } from './views/view-controller';
 import { bindEventHandlers } from './handlers/event-binders';
+import { createSearchSuggest } from './search-suggest';
 
 const viewContent = document.getElementById('view-content');
 const viewTitle = document.getElementById('view-title');
@@ -111,13 +112,30 @@ function updateAuthUI() {
 
 const { safeRender } = originalViewController;
 
+let searchSuggestInstance = null;
+
+function initSearchSuggest() {
+  if (searchSuggestInstance) {
+    searchSuggestInstance.destroy();
+  }
+  searchSuggestInstance = createSearchSuggest({
+    api,
+    onSuggestSelect(item) {
+      loadBooks({ title: item.title });
+    }
+  });
+  searchSuggestInstance.attach();
+}
+
 async function loadBooks(params = {}) {
   state.bookSearch = normalizeBookSearch(params);
   state.loading.books = true;
   safeRender();
+  initSearchSuggest();
   state.books = await api.getBooks(state.bookSearch);
   state.loading.books = false;
   safeRender();
+  initSearchSuggest();
 }
 
 async function loadCategories() {
