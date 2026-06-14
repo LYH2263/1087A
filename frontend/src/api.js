@@ -391,5 +391,27 @@ export const api = {
       const query = new URLSearchParams(params).toString();
       return request(`/admin/stock/restock-logs${query ? `?${query}` : ''}`);
     }
+  },
+  getNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/notifications${query ? `?${query}` : ''}`);
+  },
+  getUnreadNotificationCount() {
+    return request('/notifications/unread-count');
+  },
+  markNotificationRead(notificationId) {
+    return request(`/notifications/${notificationId}/read`, {
+      method: 'POST'
+    });
+  },
+  markAllNotificationsRead() {
+    return request('/notifications/read-all', {
+      method: 'POST'
+    });
+  },
+  deleteNotification(notificationId) {
+    return request(`/notifications/${notificationId}`, {
+      method: 'DELETE'
+    });
   }
 };

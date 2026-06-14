@@ -8,6 +8,7 @@ const { ApiError } = require('../errors');
 const { bookSchema, bookUpdateSchema, categorySchema, createCouponSchema, updateCouponSchema, stockThresholdSchema, singleRestockSchema, batchRestockSchema, rejectAfterSaleSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 const { generateCouponCode } = require('../utils/coupon');
+const { createOrderNotification } = require('../utils/notification');
 
 const router = express.Router();
 
@@ -288,7 +289,7 @@ router.post('/orders/:id/accept', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_PENDING');
   }
 
-  await prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx) => {
     await tx.order.update({
       where: { id: order.id },
       data: { status: 'PAID' }
@@ -300,7 +301,13 @@ router.post('/orders/:id/accept', asyncHandler(async (req, res) => {
         data: { sales: { increment: item.quantity } }
       });
     }
+
+    return await tx.order.findUnique({
+      where: { id: order.id }
+    });
   });
+
+  await createOrderNotification(order.userId, 'ORDER_PAID', updated);
 
   res.json({ message: 'order accepted' });
 }));
@@ -314,10 +321,12 @@ router.post('/orders/:id/ship', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_PAID');
   }
 
-  await prisma.order.update({
+  const updated = await prisma.order.update({
     where: { id: order.id },
     data: { status: 'SHIPPED' }
   });
+
+  await createOrderNotification(order.userId, 'ORDER_SHIPPED', updated);
 
   res.json({ message: 'order shipped' });
 }));
@@ -332,7 +341,7 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_REFUNDABLE');
   }
 
-  await prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx) => {
     await tx.order.update({
       where: { id: order.id },
       data: { status: 'REFUNDED' }
@@ -362,7 +371,13 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
         }
       });
     }
+
+    return await tx.order.findUnique({
+      where: { id: order.id }
+    });
   });
+
+  await createOrderNotification(order.userId, 'ORDER_REFUNDED', updated);
 
   res.json({ message: 'order refunded' });
 }));

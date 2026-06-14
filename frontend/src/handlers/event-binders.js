@@ -141,6 +141,9 @@ export function bindEventHandlers({
   loadOrders,
   loadAddresses,
   loadAdmin,
+  loadNotifications,
+  loadUnreadNotificationCount,
+  updateNotificationBadge,
   safeRender,
   openModal,
   closeModal,
@@ -744,6 +747,54 @@ export function bindEventHandlers({
       if (currentPage < totalPages) {
         await loadRestockLogs(currentPage + 1);
         safeRender();
+      }
+    },
+    'mark-read': async (target) => {
+      const notificationId = target.dataset.id;
+      await api.markNotificationRead(notificationId);
+      if (state.view === 'notifications') {
+        await loadNotifications(state.notifications.page);
+      } else {
+        await loadUnreadNotificationCount();
+      }
+      showToast('已标记为已读', 'success');
+    },
+    'mark-all-read': async () => {
+      await api.markAllNotificationsRead();
+      if (state.view === 'notifications') {
+        await loadNotifications(state.notifications.page);
+      } else {
+        await loadUnreadNotificationCount();
+      }
+      showToast('所有消息已标记为已读', 'success');
+    },
+    'delete-notification': async (target) => {
+      const notificationId = target.dataset.id;
+      if (!confirm('确定要删除这条消息吗？')) {
+        return;
+      }
+      await api.deleteNotification(notificationId);
+      if (state.view === 'notifications') {
+        const currentPage = state.notifications.page;
+        const totalPages = Math.ceil((state.notifications.total - 1) / state.notifications.pageSize);
+        const newPage = currentPage > totalPages && totalPages > 0 ? totalPages : currentPage;
+        await loadNotifications(newPage);
+      } else {
+        await loadUnreadNotificationCount();
+      }
+      showToast('消息已删除', 'success');
+    },
+    'notification-prev': async () => {
+      const currentPage = state.notifications.page;
+      if (currentPage > 1) {
+        await loadNotifications(currentPage - 1);
+      }
+    },
+    'notification-next': async () => {
+      const currentPage = state.notifications.page;
+      const totalPages = Math.ceil(state.notifications.total / state.notifications.pageSize);
+      if (currentPage < totalPages) {
+        await loadNotifications(currentPage + 1);
       }
     }
   };

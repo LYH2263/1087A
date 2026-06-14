@@ -22,7 +22,15 @@ export const state = {
     wishlist: false,
     orders: false,
     addresses: false,
-    admin: false
+    admin: false,
+    notifications: false
+  },
+  notifications: {
+    list: [],
+    unreadCount: 0,
+    total: 0,
+    page: 1,
+    pageSize: 20
   },
   admin: {
     tab: 'books',

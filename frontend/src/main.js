@@ -11,6 +11,9 @@ const toastHost = document.getElementById('toast');
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const userChip = document.getElementById('user-chip');
+const notificationBtn = document.getElementById('notification-btn');
+const notificationBadge = document.getElementById('notification-badge');
+const navNotificationBadge = document.getElementById('nav-notification-badge');
 const adminNavBtn = document.querySelector('[data-view="admin"]');
 const adminNavSection = document.getElementById('admin-nav');
 
@@ -80,7 +83,7 @@ function closeModal() {
   modal.innerHTML = '';
 }
 
-const { updateAuthUI, safeRender } = createViewController({
+const originalViewController = createViewController({
   state,
   viewContent,
   viewTitle,
@@ -92,6 +95,18 @@ const { updateAuthUI, safeRender } = createViewController({
   escapeHtmlAttr,
   showToast
 });
+
+function updateAuthUI() {
+  originalViewController.updateAuthUI();
+  updateNotificationUI();
+  if (state.user) {
+    startUnreadPolling();
+  } else {
+    stopUnreadPolling();
+  }
+}
+
+const { safeRender } = originalViewController;
 
 async function loadBooks(params = {}) {
   state.bookSearch = normalizeBookSearch(params);
@@ -150,6 +165,55 @@ async function loadAdmin() {
   state.loading.admin = false;
 }
 
+async function loadNotifications(page = 1) {
+  if (!state.user) return;
+  state.loading.notifications = true;
+  safeRender();
+  const data = await api.getNotifications({ page, pageSize: state.notifications.pageSize });
+  state.notifications.list = data.notifications;
+  state.notifications.total = data.total;
+  state.notifications.page = data.page;
+  state.notifications.pageSize = data.pageSize;
+  state.notifications.unreadCount = data.unreadCount;
+  state.loading.notifications = false;
+  safeRender();
+}
+
+async function loadUnreadNotificationCount() {
+  if (!state.user) return;
+  try {
+    const data = await api.getUnreadNotificationCount();
+    state.notifications.unreadCount = data.unreadCount;
+    updateNotificationBadge();
+  } catch (error) {
+    // 静默失败，不影响用户体验
+  }
+}
+
+function updateNotificationBadge() {
+  const count = state.notifications.unreadCount;
+  if (count > 0) {
+    notificationBadge.textContent = count > 99 ? '99+' : count;
+    notificationBadge.classList.remove('hidden');
+    navNotificationBadge.textContent = count > 99 ? '99+' : count;
+    navNotificationBadge.classList.remove('hidden');
+  } else {
+    notificationBadge.classList.add('hidden');
+    navNotificationBadge.classList.add('hidden');
+  }
+}
+
+function updateNotificationUI() {
+  if (state.user) {
+    notificationBtn.classList.remove('hidden');
+    updateNotificationBadge();
+  } else {
+    notificationBtn.classList.add('hidden');
+    notificationBadge.classList.add('hidden');
+    navNotificationBadge.classList.add('hidden');
+  }
+}
+
 const viewLoaders = {
   books: async () => {
     await loadCategories();
@@ -162,6 +226,7 @@ const viewLoaders = {
   },
   wishlist: loadWishlist,
   orders: loadOrders,
+  notifications: () => loadNotifications(1),
   profile: loadAddresses,
   admin: loadAdmin
 };
@@ -251,10 +316,23 @@ function openResetModal(token = '') {
 }
 
 loginBtn.addEventListener('click', openLoginModal);
+notificationBtn.addEventListener('click', () => {
+  if (state.user) {
+    setView('notifications');
+  }
+});
 logoutBtn.addEventListener('click', async () => {
   await api.logout();
   api.clearToken();
   state.user = null;
+  state.notifications = {
+    list: [],
+    unreadCount: 0,
+    total: 0,
+    page: 1,
+    pageSize: 20
+  };
+  stopUnreadPolling();
   updateAuthUI();
   showToast('已退出登录', 'success');
   await setView('books');
@@ -275,6 +353,9 @@ bindEventHandlers({
   loadOrders,
   loadAddresses,
   loadAdmin,
+  loadNotifications,
+  loadUnreadNotificationCount,
+  updateNotificationBadge,
   safeRender,
   openModal,
   closeModal,
@@ -284,11 +365,34 @@ bindEventHandlers({
   openResetModal
 });
 
+let unreadPollInterval = null;
+
+function startUnreadPolling() {
+  if (unreadPollInterval) {
+    clearInterval(unreadPollInterval);
+  }
+  unreadPollInterval = setInterval(() => {
+    if (state.user) {
+      loadUnreadNotificationCount();
+    }
+  }, 30000);
+}
+
+function stopUnreadPolling() {
+  if (unreadPollInterval) {
+    clearInterval(unreadPollInterval);
+    unreadPollInterval = null;
+  }
+}
+
 async function bootstrap() {
   api.initToken();
   try {
     const me = await api.getMe();
     state.user = me;
+    if (state.user) {
+      await loadUnreadNotificationCount();
+    }
   } catch (error) {
     state.user = null;
   }

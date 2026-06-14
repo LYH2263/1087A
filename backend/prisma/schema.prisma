@@ -74,6 +74,13 @@ enum UserCouponStatus {
   EXPIRED
 }
 
+enum NotificationType {
+  ORDER_PAID
+  ORDER_SHIPPED
+  ORDER_COMPLETED
+  ORDER_REFUNDED
+}
+
 model User {
   id              String          @id @default(cuid())
   username        String          @unique
@@ -91,6 +98,7 @@ model User {
   passwordResets  PasswordReset[]
   userCoupons     UserCoupon[]
   afterSales      AfterSale[]
+  notifications   Notification[]
 }
 
 model Session {
@@ -208,6 +216,7 @@ model Order {
   items         OrderItem[]
   userCoupon    UserCoupon?  @relation(fields: [userCouponId], references: [id])
   afterSales    AfterSale[]
+  notifications Notification[]
 }
 
 model OrderItem {
@@ -316,4 +325,22 @@ model StockRestockLog {
   operator  String
   createdAt DateTime @default(now())
   book      Book     @relation(fields: [bookId], references: [id])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  content   String
+  orderId   String?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id])
+  order     Order?           @relation(fields: [orderId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([userId, isRead])
 }

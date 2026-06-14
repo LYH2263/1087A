@@ -799,11 +799,122 @@ export function createViewController({
     `;
   }
 
+  function renderNotifications() {
+    viewTitle.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-semibold">消息中心</h2>
+          <p class="text-sm text-slate-500">查看订单状态变更通知</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn-outline" data-action="mark-all-read" ${state.notifications.unreadCount === 0 ? 'disabled' : ''}>
+            全部已读 (${state.notifications.unreadCount})
+          </button>
+        </div>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后查看消息。</div>`;
+      return;
+    }
+
+    if (state.loading.notifications) {
+      viewContent.innerHTML = renderSkeleton();
+      return;
+    }
+
+    const { list, total, page, pageSize, unreadCount } = state.notifications;
+    const totalPages = Math.ceil(total / pageSize);
+
+    if (list.length === 0) {
+      viewContent.innerHTML = `
+        <div class="card p-12 text-center">
+          <div class="text-5xl mb-4">🔔</div>
+          <p class="text-lg font-semibold text-slate-700">暂无消息</p>
+          <p class="text-sm text-slate-500 mt-2">订单状态变更时会在这里通知您</p>
+        </div>
+      `;
+      return;
+    }
+
+    const typeIcons = {
+      ORDER_PAID: '💳',
+      ORDER_SHIPPED: '📦',
+      ORDER_COMPLETED: '✅',
+      ORDER_REFUNDED: '💰'
+    };
+
+    const notificationList = list
+      .map(
+        (notification) => `
+        <div class="card p-5 space-y-3 ${!notification.isRead ? 'bg-teal-50/50 border-teal-200' : ''}">
+          <div class="flex items-start gap-4">
+            <div class="text-3xl">${typeIcons[notification.type] || '📩'}</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="font-semibold text-base ${!notification.isRead ? 'text-teal-700' : ''}">
+                    ${notification.title}
+                    ${!notification.isRead ? '<span class="ml-2 inline-block w-2 h-2 bg-teal-500 rounded-full"></span>' : ''}
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-1">
+                    ${new Date(notification.createdAt).toLocaleString('zh-CN')}
+                  </p>
+                </div>
+              </div>
+              <p class="text-sm text-slate-600 mt-2">${notification.content}</p>
+              ${notification.orderId ? `<p class="text-xs text-slate-400 mt-2">订单号：${notification.orderId}</p>` : ''}
+            </div>
+          </div>
+          <div class="flex gap-2 pt-2 border-t border-slate-100">
+            ${!notification.isRead ? `
+              <button class="btn-outline btn-sm" data-action="mark-read" data-id="${notification.id}">
+                标记已读
+              </button>
+            ` : ''}
+            <button class="btn-outline btn-sm text-red-600 border-red-200 hover:border-red-400 hover:text-red-700" data-action="delete-notification" data-id="${notification.id}">
+              删除
+            </button>
+          </div>
+        </div>
+      `
+      )
+      .join('');
+
+    const pagination = totalPages > 1 ? `
+      <div class="flex justify-center items-center gap-3 pt-4">
+        <button class="btn-outline" data-action="notification-prev" ${page <= 1 ? 'disabled' : ''}>
+          上一页
+        </button>
+        <span class="text-sm text-slate-600">
+          第 ${page} / ${totalPages} 页，共 ${total} 条
+        </span>
+        <button class="btn-outline" data-action="notification-next" ${page >= totalPages ? 'disabled' : ''}>
+          下一页
+        </button>
+      </div>
+    ` : '';
+
+    viewContent.innerHTML = `
+      <div class="mb-4 flex items-center justify-between">
+        <p class="text-sm text-slate-500">
+          共 ${total} 条消息，${unreadCount} 条未读
+        </p>
+      </div>
+      <div class="space-y-4">
+        ${notificationList}
+      </div>
+      ${pagination}
+    `;
+  }
+
   const viewRenderers = {
     books: renderBooks,
     cart: renderCart,
     wishlist: renderWishlist,
     orders: renderOrders,
+    notifications: renderNotifications,
     profile: renderProfile,
     admin: renderAdmin
   };

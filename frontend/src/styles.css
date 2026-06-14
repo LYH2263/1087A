@@ -49,6 +49,12 @@ h1, h2, h3, h4 {
   .btn-outline {
     @apply btn border border-slate-300 text-slate-700 hover:border-slate-500 hover:text-slate-900 active:scale-95;
   }
+  .btn-icon {
+    @apply inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 transition;
+  }
+  .btn-sm {
+    @apply px-3 py-1 text-xs;
+  }
   .input {
     @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-200 focus:outline-none;
   }

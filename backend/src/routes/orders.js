@@ -5,6 +5,7 @@ const { ApiError } = require('../errors');
 const { checkoutSchema, reviewSchema } = require('../validators');
 const { fromCents } = require('../utils/money');
 const { calculateDiscount, isCouponExpired } = require('../utils/coupon');
+const { createOrderNotification } = require('../utils/notification');
 
 const router = express.Router();
 
@@ -237,7 +238,7 @@ router.post('/:id/pay', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_PAYABLE');
   }
 
-  await prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx) => {
     await tx.order.update({
       where: { id: order.id },
       data: { status: 'PAID' }
@@ -249,12 +250,14 @@ router.post('/:id/pay', asyncHandler(async (req, res) => {
         data: { sales: { increment: item.quantity } }
       });
     }
+
+    return await tx.order.findUnique({
+      where: { id: order.id },
+      include: { items: true }
+    });
   });
 
-  const updated = await prisma.order.findUnique({
-    where: { id: order.id },
-    include: { items: true }
-  });
+  await createOrderNotification(req.user.id, 'ORDER_PAID', updated);
 
   res.json(mapOrder(updated));
 }));
@@ -319,10 +322,12 @@ router.post('/:id/confirm', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_SHIPPED');
   }
 
-  await prisma.order.update({
+  const updated = await prisma.order.update({
     where: { id: order.id },
     data: { status: 'COMPLETED' }
   });
+
+  await createOrderNotification(req.user.id, 'ORDER_COMPLETED', updated);
 
   res.json({ message: 'order completed' });
 }));
