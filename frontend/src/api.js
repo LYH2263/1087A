@@ -215,6 +215,30 @@ export const api = {
   deleteAddress(id) {
     return request(`/addresses/${id}`, { method: 'DELETE' });
   },
+  getAvailableCoupons() {
+    return request('/coupons/available');
+  },
+  claimCoupon(couponId) {
+    return request('/coupons/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ couponId })
+    });
+  },
+  getMyCoupons(status) {
+    const query = status ? `?status=${status}` : '';
+    return request(`/coupons/mine${query}`);
+  },
+  calculateCoupon(userCouponId, subtotal) {
+    return request('/coupons/calculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userCouponId, subtotal })
+    });
+  },
+  getApplicableCoupons(subtotal) {
+    return request(`/coupons/applicable?subtotal=${subtotal}`);
+  },
   admin: {
     getBooks(params = {}) {
       const query = new URLSearchParams(params).toString();
@@ -283,6 +307,33 @@ export const api = {
         method: 'POST',
         body: formData
       });
+    },
+    getCoupons(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      return request(`/admin/coupons${query ? `?${query}` : ''}`);
+    },
+    createCoupon(payload) {
+      return request('/admin/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    getCouponDetail(id) {
+      return request(`/admin/coupons/${id}`);
+    },
+    updateCoupon(id, payload) {
+      return request(`/admin/coupons/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    deactivateCoupon(id) {
+      return request(`/admin/coupons/${id}`, { method: 'DELETE' });
+    },
+    getCouponStats() {
+      return request('/admin/coupons/stats/overview');
     }
   }
 };

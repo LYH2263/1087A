@@ -81,12 +81,48 @@ const addressSchema = z.object({
 
 const checkoutSchema = z.object({
   addressId: z.string().min(1),
-  paymentMethod: z.enum(['WECHAT', 'ALIPAY', 'CARD', 'COD'])
+  paymentMethod: z.enum(['WECHAT', 'ALIPAY', 'CARD', 'COD']),
+  userCouponId: z.string().optional().nullable()
 });
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
   reviewText: z.string().min(3).max(200)
+});
+
+const createCouponSchema = z.object({
+  name: z.string().min(1).max(50),
+  type: z.enum(['FIXED_AMOUNT', 'PERCENTAGE']),
+  discountAmount: z.number().positive().optional(),
+  discountPercentage: z.number().positive().max(100).optional(),
+  maxDiscount: z.number().positive().optional(),
+  minAmount: z.number().min(0).default(0),
+  totalQuantity: z.number().int().positive(),
+  limitPerUser: z.number().int().min(1).default(1),
+  validFrom: z.string().refine((v) => !isNaN(Date.parse(v)), '日期格式不正确'),
+  validUntil: z.string().refine((v) => !isNaN(Date.parse(v)), '日期格式不正确'),
+  description: z.string().max(200).optional()
+}).refine((data) => {
+  if (data.type === 'FIXED_AMOUNT') {
+    return data.discountAmount !== undefined;
+  }
+  if (data.type === 'PERCENTAGE') {
+    return data.discountPercentage !== undefined;
+  }
+  return false;
+}, {
+  message: '满减券需配置 discountAmount，折扣券需配置 discountPercentage',
+  path: ['type']
+});
+
+const updateCouponSchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'EXPIRED']).optional(),
+  description: z.string().max(200).optional().nullable()
+});
+
+const claimCouponSchema = z.object({
+  couponId: z.string().min(1)
 });
 
 module.exports = {
@@ -101,5 +137,8 @@ module.exports = {
   cartUpdateSchema,
   addressSchema,
   checkoutSchema,
-  reviewSchema
+  reviewSchema,
+  createCouponSchema,
+  updateCouponSchema,
+  claimCouponSchema
 };
