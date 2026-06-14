@@ -69,6 +69,10 @@ export function createViewController({
       .join('')}</div>`;
   }
 
+  function isBookFavorited(bookId) {
+    return state.wishlist.some((item) => item.bookId === bookId);
+  }
+
   function renderBooks() {
     const search = state.bookSearch;
     const categoryOptions = state.categories
@@ -77,10 +81,15 @@ export function createViewController({
 
     const bookCards = state.books
       .map(
-        (book) => `
+        (book) => {
+          const favorited = isBookFavorited(book.id);
+          return `
         <div class="card hover-card p-4 flex flex-col gap-3">
-          <div class="rounded-xl overflow-hidden h-44 bg-slate-100">
+          <div class="relative rounded-xl overflow-hidden h-44 bg-slate-100">
             <img src="${book.coverUrl}" alt="${book.title}" class="w-full h-full object-contain" />
+            <button class="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-lg transition hover:scale-110 ${favorited ? 'text-red-500' : 'text-slate-400 hover:text-red-400'}" data-action="toggle-favorite" data-id="${book.id}" title="${favorited ? '取消收藏' : '收藏'}">
+              ${favorited ? '♥' : '♡'}
+            </button>
           </div>
           <div>
             <h3 class="font-semibold text-lg">${book.title}</h3>
@@ -96,7 +105,8 @@ export function createViewController({
             <button class="btn-primary" data-action="add-to-cart" data-id="${book.id}">加入购物车</button>
           </div>
         </div>
-      `
+      `;
+        }
       )
       .join('');
 
@@ -548,9 +558,76 @@ export function createViewController({
     viewContent.innerHTML = `${adminTabs}${content}`;
   }
 
+  function renderWishlist() {
+    viewTitle.innerHTML = `
+      <div>
+        <h2 class="text-xl font-semibold">我的收藏</h2>
+        <p class="text-sm text-slate-500">收藏心仪书籍，降价时及时提醒</p>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后查看收藏。</div>`;
+      return;
+    }
+
+    if (state.wishlist.length === 0) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">暂无收藏书籍，去书籍查询页面发现好书吧~</div>`;
+      return;
+    }
+
+    const wishlistCards = state.wishlist
+      .map(
+        (item) => {
+          const book = item.book;
+          const isInactive = book.status !== 'ACTIVE';
+          const isPriceDropped = item.isPriceDropped;
+          return `
+        <div class="card hover-card p-4 flex flex-col gap-3 ${isInactive ? 'opacity-60' : ''}">
+          <div class="relative rounded-xl overflow-hidden h-44 bg-slate-100">
+            <img src="${book.coverUrl}" alt="${book.title}" class="w-full h-full object-contain" />
+            ${isPriceDropped ? `<span class="absolute top-2 left-2 badge bg-emerald-500 text-white">已降价 -${item.dropPercent}%</span>` : ''}
+            ${isInactive ? '<span class="absolute top-2 left-2 badge bg-slate-600 text-white">已下架</span>' : ''}
+            <button class="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-lg text-red-500 transition hover:scale-110" data-action="remove-wishlist" data-id="${item.id}" data-book-id="${book.id}" title="取消收藏">
+              ♥
+            </button>
+          </div>
+          <div>
+            <h3 class="font-semibold text-lg">${book.title}</h3>
+            <p class="text-sm text-slate-500">${book.author}</p>
+          </div>
+          <div class="space-y-1">
+            <div class="flex items-baseline gap-2">
+              <span class="text-lg font-semibold text-slate-900">${formatCurrency(book.price)}</span>
+              ${isPriceDropped ? `<span class="text-xs text-slate-400 line-through">${formatCurrency(item.savedPrice)}</span>` : ''}
+            </div>
+            ${isPriceDropped ? `<p class="text-xs text-emerald-600">比收藏时便宜 ${formatCurrency(item.dropAmount)}</p>` : ''}
+            ${!isPriceDropped && !isInactive ? `<p class="text-xs text-slate-400">收藏价 ${formatCurrency(item.savedPrice)}</p>` : ''}
+            ${isInactive ? '<p class="text-xs text-slate-500">该书籍已下架，暂不可购买</p>' : ''}
+          </div>
+          <div class="flex gap-2">
+            <button class="btn-primary flex-1" data-action="wishlist-to-cart" data-id="${item.id}" ${isInactive || book.stock < 1 ? 'disabled' : ''}>
+              ${isInactive ? '已下架' : book.stock < 1 ? '缺货' : '移入购物车'}
+            </button>
+            <button class="btn-outline" data-action="remove-wishlist" data-id="${item.id}" data-book-id="${book.id}">移除</button>
+          </div>
+        </div>
+      `;
+        }
+      )
+      .join('');
+
+    viewContent.innerHTML = `
+      <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        ${wishlistCards}
+      </div>
+    `;
+  }
+
   const viewRenderers = {
     books: renderBooks,
     cart: renderCart,
+    wishlist: renderWishlist,
     orders: renderOrders,
     profile: renderProfile,
     admin: renderAdmin

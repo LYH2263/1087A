@@ -31,6 +31,8 @@ const toastMap = [
   [/not found/i, '未找到相关数据'],
   [/insufficient stock/i, '库存不足'],
   [/cart empty|cart_empty/i, '当前购物车为空,请到书籍查询页面购买书籍.'],
+  [/book_not_active|book not active/i, '该书籍已下架，无法购买'],
+  [/wishlist_item_not_found|wishlist item not found/i, '收藏项不存在'],
   [/order not/gi, '订单状态不匹配，请刷新后重试'],
   [/order not payable|order_not_payable/i, '该订单当前不可支付'],
   [/address not found/i, '未找到收货地址'],
@@ -109,6 +111,11 @@ async function loadCart() {
   state.cart = await api.getCart();
 }
 
+async function loadWishlist() {
+  if (!state.user) return;
+  state.wishlist = await api.getWishlist();
+}
+
 async function loadOrders() {
   if (!state.user) return;
   state.orders = await api.getOrders();
@@ -133,11 +140,13 @@ const viewLoaders = {
   books: async () => {
     await loadCategories();
     await loadBooks(state.bookSearch);
+    await loadWishlist();
   },
   cart: async () => {
     await loadCart();
     await loadAddresses();
   },
+  wishlist: loadWishlist,
   orders: loadOrders,
   profile: loadAddresses,
   admin: loadAdmin
@@ -248,6 +257,7 @@ bindEventHandlers({
   loadBooks,
   normalizeBookSearch,
   loadCart,
+  loadWishlist,
   loadOrders,
   loadAddresses,
   loadAdmin,

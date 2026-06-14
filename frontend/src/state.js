@@ -13,11 +13,13 @@ export const state = {
     maxPrice: ''
   },
   cart: [],
+  wishlist: [],
   orders: [],
   addresses: [],
   loading: {
     books: false,
     cart: false,
+    wishlist: false,
     orders: false,
     addresses: false,
     admin: false

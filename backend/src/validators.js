@@ -125,6 +125,10 @@ const claimCouponSchema = z.object({
   couponId: z.string().min(1)
 });
 
+const wishlistAddSchema = z.object({
+  bookId: z.string().min(1)
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -140,5 +144,6 @@ module.exports = {
   reviewSchema,
   createCouponSchema,
   updateCouponSchema,
-  claimCouponSchema
+  claimCouponSchema,
+  wishlistAddSchema
 };

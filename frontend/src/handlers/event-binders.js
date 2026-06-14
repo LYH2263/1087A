@@ -137,6 +137,7 @@ export function bindEventHandlers({
   loadBooks,
   normalizeBookSearch,
   loadCart,
+  loadWishlist,
   loadOrders,
   loadAddresses,
   loadAdmin,
@@ -362,6 +363,42 @@ export function bindEventHandlers({
   });
 
   const contentActionHandlers = {
+    'toggle-favorite': async (target) => {
+      if (!state.user) {
+        openLoginModal();
+        return;
+      }
+      const bookId = target.dataset.id;
+      const isFavorited = state.wishlist.some((item) => item.bookId === bookId);
+      try {
+        if (isFavorited) {
+          await api.removeFromWishlistByBook(bookId);
+          showToast('已取消收藏', 'success');
+        } else {
+          await api.addToWishlist(bookId);
+          showToast('已收藏', 'success');
+        }
+        await loadWishlist();
+        safeRender();
+      } catch (error) {
+        showToast(error.message || '操作失败', 'error');
+      }
+    },
+    'remove-wishlist': async (target) => {
+      const itemId = target.dataset.id;
+      await api.removeFromWishlist(itemId);
+      showToast('已移除收藏', 'success');
+      await loadWishlist();
+      safeRender();
+    },
+    'wishlist-to-cart': async (target) => {
+      const itemId = target.dataset.id;
+      await api.addWishlistToCart(itemId);
+      showToast('已加入购物车', 'success');
+      await loadCart();
+      await loadWishlist();
+      safeRender();
+    },
     'add-to-cart': async (target) => {
       if (!state.user) {
         openLoginModal();

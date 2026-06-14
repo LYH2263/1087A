@@ -166,6 +166,28 @@ export const api = {
   clearCart() {
     return request('/cart', { method: 'DELETE' });
   },
+  getWishlist() {
+    return request('/wishlist');
+  },
+  addToWishlist(bookId) {
+    return request('/wishlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookId })
+    });
+  },
+  removeFromWishlist(itemId) {
+    return request(`/wishlist/${itemId}`, { method: 'DELETE' });
+  },
+  removeFromWishlistByBook(bookId) {
+    return request(`/wishlist/book/${bookId}`, { method: 'DELETE' });
+  },
+  addWishlistToCart(itemId) {
+    return request(`/wishlist/${itemId}/add-to-cart`, { method: 'POST' });
+  },
+  checkWishlist(bookId) {
+    return request(`/wishlist/check/${bookId}`);
+  },
   getOrders() {
     return request('/orders');
   },
