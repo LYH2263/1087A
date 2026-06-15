@@ -144,6 +144,9 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return request(`/books${query ? `?${query}` : ''}`);
   },
+  getBook(id) {
+    return request(`/books/${id}`);
+  },
   getCategories() {
     return request('/books/categories');
   },

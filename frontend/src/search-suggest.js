@@ -1,5 +1,5 @@
 import { state } from './state';
-import { escapeHtml } from './state';
+import { escapeHtml, escapeHtmlAttr } from './state';
 
 let requestId = 0;
 let debounceTimer = null;
@@ -19,12 +19,37 @@ export function highlightMatch(text, keyword) {
   return escaped.replace(regex, '<mark class="suggest-highlight">$1</mark>');
 }
 
-function renderSuggestionDropdown(container, items, keyword, activeIndex) {
+function renderSuggestionDropdown(container, items, keyword, activeIndex, history) {
   if (!container) return;
+  if (!items.length && !keyword && history && history.length > 0) {
+    container.innerHTML = `
+      <div class="history-section">
+        <div class="history-header">
+          <span class="history-title">搜索历史</span>
+          <button class="history-clear" data-action="clear-search-history">清空</button>
+        </div>
+        <div class="history-tags">
+          ${history
+            .map(
+              (kw) => `
+            <span class="history-tag">
+              <span class="history-tag-keyword" data-history-keyword="${escapeHtmlAttr(kw)}">${escapeHtml(kw)}</span>
+              <button class="history-tag-remove" data-action="remove-search-history" data-history-keyword="${escapeHtmlAttr(kw)}" title="移除">×</button>
+            </span>
+          `
+            )
+            .join('')}
+        </div>
+      </div>
+    `;
+    container.classList.add('suggest-visible');
+    return;
+  }
   if (!items.length && keyword) {
     container.innerHTML = `
       <div class="suggest-empty">
         <p>未找到「${escapeHtml(keyword)}」相关书籍</p>
+        <p class="text-xs text-slate-400 mt-1">试试其他关键词吧</p>
       </div>
     `;
     container.classList.add('suggest-visible');
@@ -40,13 +65,15 @@ function renderSuggestionDropdown(container, items, keyword, activeIndex) {
       (item, idx) => `
     <div class="suggest-item${idx === activeIndex ? ' suggest-active' : ''}" data-suggest-index="${idx}" data-suggest-id="${item.id}">
       <img class="suggest-cover" src="${item.coverUrl}" alt="${escapeHtml(item.title)}" />
-      <div class="suggest-info">
+      <div class="suggest-info suggest-clickable" data-suggest-action="detail" data-suggest-index="${idx}">
         <p class="suggest-title">${highlightMatch(item.title, keyword)}</p>
         <p class="suggest-author">${highlightMatch(item.author, keyword)}</p>
       </div>
       <div class="suggest-meta">
         <span class="suggest-price">¥${Number(item.price).toFixed(2)}</span>
-        <span class="suggest-sales">销量 ${item.sales}</span>
+        <button class="suggest-search-btn" data-suggest-action="search" data-suggest-index="${idx}" title="搜索此书名">
+          🔍 搜索
+        </button>
       </div>
     </div>
   `
@@ -55,7 +82,7 @@ function renderSuggestionDropdown(container, items, keyword, activeIndex) {
   container.classList.add('suggest-visible');
 }
 
-export function createSearchSuggest({ api, onSuggestSelect }) {
+export function createSearchSuggest({ api, onSuggestSelect, onSuggestDetail, onSearchKeyword, onClearHistory, onRemoveHistory }) {
   const DEBOUNCE_MS = 300;
 
   async function fetchSuggestions(keyword) {
@@ -94,7 +121,8 @@ export function createSearchSuggest({ api, onSuggestSelect }) {
       container,
       state.searchSuggestion.items,
       state.searchSuggestion.keyword,
-      state.searchSuggestion.activeIndex
+      state.searchSuggestion.activeIndex,
+      state.searchHistory.items
     );
   }
 
@@ -116,7 +144,7 @@ export function createSearchSuggest({ api, onSuggestSelect }) {
       clearTimeout(debounceTimer);
       requestId++;
       state.searchSuggestion.items = [];
-      state.searchSuggestion.visible = false;
+      state.searchSuggestion.visible = true;
       state.searchSuggestion.keyword = '';
       state.searchSuggestion.activeIndex = -1;
       updateDropdown();
@@ -150,7 +178,7 @@ export function createSearchSuggest({ api, onSuggestSelect }) {
 
     if (event.key === 'Enter' && visible && activeIndex >= 0 && items[activeIndex]) {
       event.preventDefault();
-      selectItem(items[activeIndex]);
+      selectItemDetail(items[activeIndex]);
       return;
     }
 
@@ -169,7 +197,14 @@ export function createSearchSuggest({ api, onSuggestSelect }) {
     }
   }
 
-  function selectItem(item) {
+  function selectItemDetail(item) {
+    hideDropdown();
+    if (onSuggestDetail) {
+      onSuggestDetail(item);
+    }
+  }
+
+  function selectItemSearch(item) {
     hideDropdown();
     const titleInput = document.querySelector('form[data-form="book-search"] input[name="title"]');
     if (titleInput) {
@@ -190,12 +225,63 @@ export function createSearchSuggest({ api, onSuggestSelect }) {
   }
 
   function handleSuggestClick(event) {
+    const clearBtn = event.target.closest('[data-action="clear-search-history"]');
+    if (clearBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (onClearHistory) onClearHistory();
+      updateDropdown();
+      return;
+    }
+
+    const removeBtn = event.target.closest('[data-action="remove-search-history"]');
+    if (removeBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const kw = removeBtn.dataset.historyKeyword;
+      if (onRemoveHistory) onRemoveHistory(kw);
+      updateDropdown();
+      return;
+    }
+
+    const historyTag = event.target.closest('[data-history-keyword]');
+    if (historyTag && !event.target.closest('[data-action="remove-search-history"]')) {
+      event.preventDefault();
+      event.stopPropagation();
+      const kw = historyTag.dataset.historyKeyword;
+      const titleInput = document.querySelector('form[data-form="book-search"] input[name="title"]');
+      if (titleInput) {
+        titleInput.value = kw;
+      }
+      hideDropdown();
+      if (onSearchKeyword) onSearchKeyword(kw);
+      return;
+    }
+
+    const suggestAction = event.target.closest('[data-suggest-action]');
+    if (suggestAction) {
+      event.preventDefault();
+      event.stopPropagation();
+      const action = suggestAction.dataset.suggestAction;
+      const idx = parseInt(suggestAction.dataset.suggestIndex, 10);
+      const suggestion = state.searchSuggestion.items[idx];
+      if (!suggestion) return;
+      if (action === 'search') {
+        selectItemSearch(suggestion);
+      } else if (action === 'detail') {
+        selectItemDetail(suggestion);
+      }
+      return;
+    }
+
     const item = event.target.closest('[data-suggest-index]');
-    if (!item) return;
-    const idx = parseInt(item.dataset.suggestIndex, 10);
-    const suggestion = state.searchSuggestion.items[idx];
-    if (suggestion) {
-      selectItem(suggestion);
+    if (item) {
+      event.preventDefault();
+      const idx = parseInt(item.dataset.suggestIndex, 10);
+      const suggestion = state.searchSuggestion.items[idx];
+      if (suggestion) {
+        selectItemDetail(suggestion);
+      }
     }
   }
 
@@ -216,10 +302,8 @@ export function createSearchSuggest({ api, onSuggestSelect }) {
     const titleInput = viewContent.querySelector('form[data-form="book-search"] input[name="title"]');
     if (titleInput) {
       titleInput.addEventListener('focus', () => {
-        if (state.searchSuggestion.items.length && state.searchSuggestion.keyword) {
-          state.searchSuggestion.visible = true;
-          updateDropdown();
-        }
+        state.searchSuggestion.visible = true;
+        updateDropdown();
       });
     }
   }

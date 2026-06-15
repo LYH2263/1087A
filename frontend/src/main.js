@@ -1,9 +1,18 @@
 import './styles.css';
 import { api } from './api';
-import { state, normalizeBookSearch, escapeHtmlAttr } from './state';
+import {
+  state,
+  normalizeBookSearch,
+  escapeHtmlAttr,
+  loadSearchHistory,
+  addSearchKeyword,
+  removeSearchKeyword,
+  clearSearchHistory
+} from './state';
 import { createViewController } from './views/view-controller';
 import { bindEventHandlers } from './handlers/event-binders';
 import { createSearchSuggest } from './search-suggest';
+import { createBookDetail } from './book-detail';
 
 const viewContent = document.getElementById('view-content');
 const viewTitle = document.getElementById('view-title');
@@ -134,7 +143,46 @@ function updateAuthUI() {
 
 const { safeRender } = originalViewController;
 
+async function addToCart(bookId, specId = '') {
+  if (!state.user) {
+    openLoginModal();
+    return;
+  }
+  await api.addToCart({ bookId, quantity: 1, specId });
+  showToast('已加入购物车', 'success');
+  loadCart().finally(() => safeRender());
+}
+
 let searchSuggestInstance = null;
+let bookDetailInstance = null;
+
+function ensureBookDetail() {
+  if (!bookDetailInstance) {
+    bookDetailInstance = createBookDetail({
+      api,
+      openModal,
+      closeModal,
+      showToast,
+      addToCart,
+      toggleFavorite: async (bookId) => {
+        const isFavorited = state.wishlist.some((item) => item.bookId === bookId);
+        if (isFavorited) {
+          await api.removeFromWishlistByBook(bookId);
+        } else {
+          await api.addToWishlist(bookId);
+        }
+      },
+      loadWishlist,
+      safeRender
+    });
+    bookDetailInstance.attachDetailHandlers(modal);
+  }
+  return bookDetailInstance;
+}
+
+function initBookDetail() {
+  ensureBookDetail();
+}
 
 function initSearchSuggest() {
   if (searchSuggestInstance) {
@@ -144,6 +192,19 @@ function initSearchSuggest() {
     api,
     onSuggestSelect(item) {
       loadBooks({ title: item.title });
+    },
+    onSuggestDetail(item) {
+      ensureBookDetail().openBookDetail(item.id);
+    },
+    onSearchKeyword(keyword) {
+      loadBooks({ title: keyword });
+    },
+    onClearHistory() {
+      clearSearchHistory();
+      showToast('搜索历史已清空', 'success');
+    },
+    onRemoveHistory(keyword) {
+      removeSearchKeyword(keyword);
     }
   });
   searchSuggestInstance.attach();
@@ -151,6 +212,9 @@ function initSearchSuggest() {
 
 async function loadBooks(params = {}) {
   state.bookSearch = normalizeBookSearch(params);
+  if (state.bookSearch.title) {
+    addSearchKeyword(state.bookSearch.title);
+  }
   state.loading.books = true;
   safeRender();
   initSearchSuggest();
@@ -379,6 +443,7 @@ const viewLoaders = {
     await loadCategories();
     await loadBooks(state.bookSearch);
     await loadWishlist();
+    initBookDetail();
   },
   cart: async () => {
     await Promise.all([loadCart(), loadAddresses(), loadMyCoupons()]);
@@ -543,7 +608,10 @@ bindEventHandlers({
   loadMyCoupons,
   loadApplicableCoupons,
   calculateCoupon,
-  loadAfterSales
+  loadAfterSales,
+  openBookDetail: (bookId) => {
+    return ensureBookDetail().openBookDetail(bookId);
+  }
 });
 
 let unreadPollInterval = null;
@@ -568,6 +636,7 @@ function stopUnreadPolling() {
 
 async function bootstrap() {
   api.initToken();
+  loadSearchHistory();
   try {
     const me = await api.getMe();
     state.user = me;

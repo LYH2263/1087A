@@ -158,7 +158,8 @@ export function bindEventHandlers({
   loadMyCoupons,
   loadApplicableCoupons,
   calculateCoupon,
-  loadAfterSales
+  loadAfterSales,
+  openBookDetail
 }) {
   function formatCurrency(value) {
     return `¥${Number(value).toFixed(2)}`;
@@ -943,6 +944,12 @@ export function bindEventHandlers({
       const specId = target.dataset.specId || '';
       await api.addToCart({ bookId, quantity: 1, specId });
       showToast('已加入购物车', 'success');
+    },
+    'view-book-detail': async (target) => {
+      const bookId = target.dataset.bookId;
+      if (bookId && openBookDetail) {
+        await openBookDetail(bookId);
+      }
     },
     'reset-search': async (target) => {
       const form = target.closest('form');

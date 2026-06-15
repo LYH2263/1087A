@@ -313,9 +313,9 @@ export function createViewController({
           const effectiveCover = getEffectiveCover(book);
           const selectedSpec = getSelectedSpec(book);
           return `
-        <div class="card hover-card p-4 flex flex-col gap-3">
+        <div class="card hover-card p-4 flex flex-col gap-3 book-card-clickable" data-action="view-book-detail" data-book-id="${book.id}">
           <div class="relative rounded-xl overflow-hidden h-44 bg-slate-100">
-            <img src="${effectiveCover}" alt="${escapeHtml(book.title)}" class="w-full h-full object-contain" />
+            <img src="${effectiveCover}" alt="${escapeHtml(book.title)}" class="w-full h-full object-contain pointer-events-none" />
             <button class="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-lg transition hover:scale-110 ${favorited ? 'text-red-500' : 'text-slate-400 hover:text-red-400'}" data-action="toggle-favorite" data-id="${book.id}" title="${favorited ? '取消收藏' : '收藏'}">
               ${favorited ? '♥' : '♡'}
             </button>

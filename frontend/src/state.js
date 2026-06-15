@@ -18,6 +18,10 @@ export const state = {
     visible: false,
     keyword: ''
   },
+  searchHistory: {
+    items: [],
+    maxItems: 10
+  },
   selectedSpecs: {},
   cart: [],
   wishlist: [],
@@ -139,4 +143,49 @@ export function escapeHtml(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+const SEARCH_HISTORY_KEY = 'bookshop_search_history';
+const SEARCH_HISTORY_MAX = 10;
+
+export function loadSearchHistory() {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        state.searchHistory.items = parsed.filter(Boolean).slice(0, SEARCH_HISTORY_MAX);
+        return;
+      }
+    }
+  } catch (_e) {}
+  state.searchHistory.items = [];
+}
+
+export function saveSearchHistory() {
+  try {
+    localStorage.setItem(
+      SEARCH_HISTORY_KEY,
+      JSON.stringify(state.searchHistory.items.slice(0, SEARCH_HISTORY_MAX))
+    );
+  } catch (_e) {}
+}
+
+export function addSearchKeyword(keyword) {
+  const kw = String(keyword || '').trim();
+  if (!kw) return;
+  const items = state.searchHistory.items.filter((k) => k !== kw);
+  items.unshift(kw);
+  state.searchHistory.items = items.slice(0, SEARCH_HISTORY_MAX);
+  saveSearchHistory();
+}
+
+export function removeSearchKeyword(keyword) {
+  state.searchHistory.items = state.searchHistory.items.filter((k) => k !== keyword);
+  saveSearchHistory();
+}
+
+export function clearSearchHistory() {
+  state.searchHistory.items = [];
+  saveSearchHistory();
 }
