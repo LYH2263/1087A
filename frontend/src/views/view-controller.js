@@ -30,6 +30,22 @@ export function createViewController({
     return map[status] || status;
   }
 
+  function renderProgressBar(percent, color = 'emerald') {
+    const clamped = Math.min(100, Math.max(0, percent));
+    const colorClass = color === 'emerald' ? 'bg-emerald-500' : color === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
+    return `
+      <div class="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+        <div class="${colorClass} h-full rounded-full transition-all duration-500" style="width: ${clamped}%"></div>
+      </div>
+    `;
+  }
+
+  function getProgressColor(percent) {
+    if (percent >= 100) return 'emerald';
+    if (percent >= 70) return 'amber';
+    return 'blue';
+  }
+
   function setNavActive(view) {
     document.querySelectorAll('.nav-btn').forEach((btn) => {
       const active = btn.dataset.view === view;
@@ -1372,7 +1388,7 @@ export function createViewController({
       const current = overview?.current;
       const history = overview?.history || [];
 
-      if (state.loading.admin || !overview) {
+      if (state.loading.admin) {
         content = `
           <div class="card p-6 space-y-4">
             <div class="animate-pulse space-y-4">
@@ -1388,28 +1404,23 @@ export function createViewController({
             </div>
           </div>
         `;
+      } else if (!overview) {
+        content = `
+          <div class="card p-12 text-center space-y-4">
+            <div class="text-5xl">⚠️</div>
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700">数据加载失败</h3>
+              <p class="text-sm text-slate-500 mt-2">无法获取目标数据，请检查网络或稍后重试</p>
+            </div>
+            <button class="btn-primary" data-action="refresh-goals">重新加载</button>
+          </div>
+        `;
       } else {
         const hasGoal = current?.hasGoal;
         const goal = current?.goal;
         const now = new Date();
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth() + 1;
-
-        function renderProgressBar(percent, color = 'emerald') {
-          const clamped = Math.min(100, Math.max(0, percent));
-          const colorClass = color === 'emerald' ? 'bg-emerald-500' : color === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
-          return `
-            <div class="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-              <div class="${colorClass} h-full rounded-full transition-all duration-500" style="width: ${clamped}%"></div>
-            </div>
-          `;
-        }
-
-        function getProgressColor(percent) {
-          if (percent >= 100) return 'emerald';
-          if (percent >= 70) return 'amber';
-          return 'blue';
-        }
 
         const currentMonthCard = hasGoal ? `
           <div class="card p-6 space-y-6">

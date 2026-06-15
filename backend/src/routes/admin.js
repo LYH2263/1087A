@@ -1482,10 +1482,15 @@ router.get('/goals', asyncHandler(async (req, res) => {
   if (year) where.year = Number(year);
   if (month) where.month = Number(month);
 
-  const goals = await prisma.salesGoal.findMany({
-    where,
-    orderBy: [{ year: 'desc' }, { month: 'desc' }]
-  });
+  let goals = [];
+  try {
+    goals = await prisma.salesGoal.findMany({
+      where,
+      orderBy: [{ year: 'desc' }, { month: 'desc' }]
+    });
+  } catch (e) {
+    goals = [];
+  }
 
   const goalsWithStats = [];
   for (const goal of goals) {
@@ -1512,9 +1517,14 @@ router.get('/goals/:year/:month', asyncHandler(async (req, res) => {
   const year = Number(req.params.year);
   const month = Number(req.params.month);
 
-  const goal = await prisma.salesGoal.findUnique({
-    where: { year_month: { year, month } }
-  });
+  let goal = null;
+  try {
+    goal = await prisma.salesGoal.findUnique({
+      where: { year_month: { year, month } }
+    });
+  } catch (e) {
+    goal = null;
+  }
 
   const stats = await getMonthStats(year, month);
 
@@ -1621,23 +1631,33 @@ router.get('/goals/stats/overview', asyncHandler(async (req, res) => {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
-  const goal = await prisma.salesGoal.findUnique({
-    where: { year_month: { year, month } }
-  });
+  let goal = null;
+  let historyGoals = [];
+  try {
+    goal = await prisma.salesGoal.findUnique({
+      where: { year_month: { year, month } }
+    });
+  } catch (e) {
+    goal = null;
+  }
 
   const stats = await getMonthStats(year, month);
   const forecast = calculateForecast(year, month, stats.netRevenueCents, stats.netOrders);
 
-  const historyGoals = await prisma.salesGoal.findMany({
-    where: {
-      OR: [
-        { year: { lt: year } },
-        { year, month: { lt: month } }
-      ]
-    },
-    orderBy: [{ year: 'desc' }, { month: 'desc' }],
-    take: 12
-  });
+  try {
+    historyGoals = await prisma.salesGoal.findMany({
+      where: {
+        OR: [
+          { year: { lt: year } },
+          { year, month: { lt: month } }
+        ]
+      },
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      take: 12
+    });
+  } catch (e) {
+    historyGoals = [];
+  }
 
   const history = [];
   for (const g of historyGoals) {

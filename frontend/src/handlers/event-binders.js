@@ -1434,6 +1434,21 @@ export function bindEventHandlers({
       safeRender();
       showToast('目标已删除', 'success');
     },
+    'refresh-goals': async (target) => {
+      state.loading.admin = true;
+      safeRender();
+      try {
+        const data = await api.admin.getGoalsOverview();
+        state.admin.goalsOverview = data;
+        showToast('数据已刷新', 'success');
+      } catch (error) {
+        state.admin.goalsOverview = null;
+        showToast(error.message || '数据加载失败', 'error');
+      } finally {
+        state.loading.admin = false;
+        safeRender();
+      }
+    },
     'claim-coupon': async (target) => {
       if (!state.user) {
         openLoginModal();
