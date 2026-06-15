@@ -192,6 +192,9 @@ export const api = {
   checkWishlist(bookId) {
     return request(`/wishlist/check/${bookId}`);
   },
+  clearWishlist() {
+    return request('/wishlist', { method: 'DELETE' });
+  },
   getOrders() {
     return request('/orders');
   },

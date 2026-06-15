@@ -185,4 +185,11 @@ router.get('/check/:bookId', asyncHandler(async (req, res) => {
   res.json({ isFavorited: !!item });
 }));
 
+router.delete('/', asyncHandler(async (req, res) => {
+  await prisma.wishlistItem.deleteMany({
+    where: { userId: req.user.id }
+  });
+  res.json({ message: 'wishlist cleared' });
+}));
+
 module.exports = router;

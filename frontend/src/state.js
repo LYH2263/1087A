@@ -21,6 +21,9 @@ export const state = {
   selectedSpecs: {},
   cart: [],
   wishlist: [],
+  wishlistFilter: {
+    onlyPriceDrop: false
+  },
   orders: [],
   addresses: [],
   loading: {

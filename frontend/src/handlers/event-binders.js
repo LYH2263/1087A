@@ -263,17 +263,33 @@ export function bindEventHandlers({
     'close-modal': closeModal,
     'show-register': openRegisterModal,
     'show-login': openLoginModal,
-    'show-forgot': openForgotModal
+    'show-forgot': openForgotModal,
+    'confirm-clear-wishlist': async () => {
+      await api.clearWishlist();
+      closeModal();
+      state.wishlistFilter.onlyPriceDrop = false;
+      await loadWishlist();
+      safeRender();
+      showToast('收藏已清空', 'success');
+    }
   };
 
-  modal.addEventListener('click', (event) => {
+  modal.addEventListener('click', async (event) => {
     if (event.target === modal) {
       closeModal();
       return;
     }
-    const action = event.target?.dataset?.action;
+    const actionTarget = event.target.closest('[data-action]');
+    if (!(actionTarget instanceof HTMLElement)) return;
+    const action = actionTarget.dataset.action;
     const handler = modalActionHandlers[action];
-    if (handler) handler();
+    if (!handler) return;
+
+    try {
+      await handler(actionTarget);
+    } catch (error) {
+      showToast(error.message || '操作失败', 'error');
+    }
   });
 
   document.addEventListener('input', (event) => {
@@ -1184,6 +1200,24 @@ export function bindEventHandlers({
       await loadAdmin();
       safeRender();
       showToast('优惠券已启用', 'success');
+    },
+    'toggle-price-drop-filter': async (target) => {
+      state.wishlistFilter.onlyPriceDrop = target.checked;
+      safeRender();
+    },
+    'clear-wishlist': async () => {
+      if (state.wishlist.length === 0) return;
+      openModal(`
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">确认清空收藏</h3>
+          <p class="text-sm text-slate-600">确定要清空所有收藏的书籍吗？此操作不可撤销。</p>
+          <p class="text-sm text-slate-500">当前共收藏 <span class="font-semibold text-slate-900">${state.wishlist.length}</span> 本书籍</p>
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+            <button type="button" class="btn-primary" data-action="confirm-clear-wishlist">确认清空</button>
+          </div>
+        </div>
+      `);
     }
   };
 
@@ -1205,6 +1239,10 @@ export function bindEventHandlers({
     'update-qty': async (target) => {
       await api.updateCart(target.dataset.id, { quantity: Number(target.value) });
       await loadCart();
+      safeRender();
+    },
+    'toggle-price-drop-filter': async (target) => {
+      state.wishlistFilter.onlyPriceDrop = target.checked;
       safeRender();
     }
   };

@@ -1418,10 +1418,28 @@ export function createViewController({
   }
 
   function renderWishlist() {
+    const filter = state.wishlistFilter;
+    const totalItems = state.wishlist.length;
+    const filteredItems = filter.onlyPriceDrop
+      ? state.wishlist.filter((item) => item.isPriceDropped)
+      : state.wishlist;
+    const droppedCount = state.wishlist.filter((item) => item.isPriceDropped).length;
+
     viewTitle.innerHTML = `
-      <div>
-        <h2 class="text-xl font-semibold">我的收藏</h2>
-        <p class="text-sm text-slate-500">收藏心仪书籍，降价时及时提醒</p>
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold">我的收藏</h2>
+          <p class="text-sm text-slate-500">收藏心仪书籍，降价时及时提醒 · 共 ${totalItems} 本${droppedCount > 0 ? ` · ${droppedCount} 本已降价` : ''}</p>
+        </div>
+        ${state.user && totalItems > 0 ? `
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" ${filter.onlyPriceDrop ? 'checked' : ''} data-action="toggle-price-drop-filter" class="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+              <span class="text-sm text-slate-600">只看降价</span>
+            </label>
+            <button class="btn-outline" data-action="clear-wishlist">一键清空收藏</button>
+          </div>
+        ` : ''}
       </div>
     `;
 
@@ -1435,16 +1453,25 @@ export function createViewController({
       return;
     }
 
-    const wishlistCards = state.wishlist
+    if (filteredItems.length === 0) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">当前筛选条件下暂无书籍，试试调整筛选条件。</div>`;
+      return;
+    }
+
+    const wishlistCards = filteredItems
       .map(
         (item) => {
           const book = item.book;
           const isInactive = book.status !== 'ACTIVE';
           const isPriceDropped = item.isPriceDropped;
+          const title = escapeHtml(book.title);
+          const author = escapeHtml(book.author);
+          const coverUrl = escapeHtmlAttr(book.coverUrl);
+          const titleAttr = escapeHtmlAttr(book.title);
           return `
         <div class="card hover-card p-4 flex flex-col gap-3 ${isInactive ? 'opacity-60' : ''}">
           <div class="relative rounded-xl overflow-hidden h-44 bg-slate-100">
-            <img src="${book.coverUrl}" alt="${book.title}" class="w-full h-full object-contain" />
+            <img src="${coverUrl}" alt="${titleAttr}" class="w-full h-full object-contain" />
             ${isPriceDropped ? `<span class="absolute top-2 left-2 badge bg-emerald-500 text-white">已降价 -${item.dropPercent}%</span>` : ''}
             ${isInactive ? '<span class="absolute top-2 left-2 badge bg-slate-600 text-white">已下架</span>' : ''}
             <button class="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center text-lg text-red-500 transition hover:scale-110" data-action="remove-wishlist" data-id="${item.id}" data-book-id="${book.id}" title="取消收藏">
@@ -1452,8 +1479,8 @@ export function createViewController({
             </button>
           </div>
           <div>
-            <h3 class="font-semibold text-lg">${book.title}</h3>
-            <p class="text-sm text-slate-500">${book.author}</p>
+            <h3 class="font-semibold text-lg">${title}</h3>
+            <p class="text-sm text-slate-500">${author}</p>
           </div>
           <div class="space-y-1">
             <div class="flex items-baseline gap-2">
