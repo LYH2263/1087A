@@ -127,6 +127,173 @@ export function createViewController({
     return escaped.replace(regex, '<mark class="suggest-highlight">$1</mark>');
   }
 
+  function formatCouponValue(coupon) {
+    if (coupon.type === 'FIXED_AMOUNT') {
+      return `¥${Number(coupon.discountAmount).toFixed(0)}`;
+    }
+    return `${coupon.discountPercentage}%`;
+  }
+
+  function formatCouponDesc(coupon) {
+    if (coupon.type === 'FIXED_AMOUNT') {
+      return `满${Number(coupon.minAmount).toFixed(0)}减${Number(coupon.discountAmount).toFixed(0)}`;
+    }
+    let desc = `${coupon.discountPercentage}%折扣`;
+    if (coupon.maxDiscount) {
+      desc += `（上限¥${Number(coupon.maxDiscount).toFixed(0)}）`;
+    }
+    if (coupon.minAmount > 0) {
+      desc = `满${Number(coupon.minAmount).toFixed(0)}享${desc}`;
+    }
+    return desc;
+  }
+
+  function renderCouponCard(coupon, opts = {}) {
+    const { showClaim, showStatus, showSelect, selected } = opts;
+    const value = formatCouponValue(coupon);
+    const desc = formatCouponDesc(coupon);
+    const isFixed = coupon.type === 'FIXED_AMOUNT';
+    const isAvailable = coupon.status === 'AVAILABLE';
+    const isUsed = coupon.status === 'USED';
+    const isExpired = coupon.status === 'EXPIRED';
+    const dimmed = isUsed || isExpired;
+
+    let statusBadge = '';
+    if (showStatus) {
+      if (isUsed) statusBadge = '<span class="coupon-badge coupon-badge-used">已使用</span>';
+      else if (isExpired) statusBadge = '<span class="coupon-badge coupon-badge-expired">已过期</span>';
+      else statusBadge = '<span class="coupon-badge coupon-badge-available">可用</span>';
+    }
+
+    let actionBtn = '';
+    if (showClaim) {
+      if (coupon.canClaim) {
+        actionBtn = `<button class="btn-primary text-sm" data-action="claim-coupon" data-id="${coupon.id}">领取</button>`;
+      } else if (coupon.alreadyClaimed) {
+        actionBtn = '<span class="text-sm text-slate-400">已领取</span>';
+      } else {
+        actionBtn = '<span class="text-sm text-slate-400">已领完</span>';
+      }
+    }
+    if (showSelect) {
+      actionBtn = `<button class="${selected ? 'btn-primary' : 'btn-outline'} text-sm" data-action="select-coupon" data-id="${showSelect === 'userCoupon' ? coupon.id : coupon.userCouponId}">${selected ? '已选择 ✓' : '使用此券'}</button>`;
+    }
+
+    return `
+      <div class="coupon-card ${dimmed ? 'coupon-card-dimmed' : ''} ${selected ? 'coupon-card-selected' : ''}">
+        <div class="coupon-left ${isFixed ? 'bg-gradient-to-br from-orange-500 to-amber-500' : 'bg-gradient-to-br from-teal-600 to-emerald-600'}">
+          <div class="coupon-value">${value}</div>
+          <div class="coupon-type-label">${isFixed ? '满减券' : '折扣券'}</div>
+        </div>
+        <div class="coupon-right">
+          <div class="coupon-name">${escapeHtml(coupon.name)}</div>
+          <div class="coupon-desc">${desc}</div>
+          <div class="coupon-meta">
+            ${coupon.validUntil ? `<span>有效期至 ${new Date(coupon.validUntil).toLocaleDateString('zh-CN')}</span>` : ''}
+            ${coupon.remainQuantity !== undefined ? `<span>剩余 ${coupon.remainQuantity} 张</span>` : ''}
+            ${coupon.code ? `<span>${coupon.code}</span>` : ''}
+          </div>
+          ${statusBadge}
+          <div class="coupon-action">${actionBtn}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCouponCenter() {
+    viewTitle.innerHTML = `
+      <div>
+        <h2 class="text-xl font-semibold">领券中心</h2>
+        <p class="text-sm text-slate-500">领取优惠券，购物更划算</p>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后领取优惠券。</div>`;
+      return;
+    }
+
+    if (state.loading.coupons) {
+      viewContent.innerHTML = renderSkeleton(4);
+      return;
+    }
+
+    if (state.coupons.available.length === 0) {
+      viewContent.innerHTML = `
+        <div class="card p-12 text-center">
+          <div class="text-5xl mb-4">🎫</div>
+          <p class="text-lg font-semibold text-slate-700">暂无可领取的优惠券</p>
+          <p class="text-sm text-slate-500 mt-2">有新优惠券上架时会在这里通知您</p>
+        </div>
+      `;
+      return;
+    }
+
+    const couponCards = state.coupons.available
+      .map((c) => renderCouponCard(c, { showClaim: true }))
+      .join('');
+
+    viewContent.innerHTML = `<div class="space-y-4">${couponCards}</div>`;
+  }
+
+  function renderMyCoupons() {
+    viewTitle.innerHTML = `
+      <div>
+        <h2 class="text-xl font-semibold">我的优惠券</h2>
+        <p class="text-sm text-slate-500">查看与管理已领取的优惠券</p>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后查看优惠券。</div>`;
+      return;
+    }
+
+    const counts = state.coupons.mineCounts;
+    const currentTab = state.coupons.mineTab;
+    const tabs = [
+      { key: 'AVAILABLE', label: '可用', count: counts.AVAILABLE || 0 },
+      { key: 'USED', label: '已使用', count: counts.USED || 0 },
+      { key: 'EXPIRED', label: '已过期', count: counts.EXPIRED || 0 }
+    ];
+
+    const tabHtml = tabs.map((t) => `
+      <button class="${currentTab === t.key ? 'btn-primary' : 'btn-outline'}" data-action="coupon-tab" data-tab="${t.key}">
+        ${t.label} (${t.count})
+      </button>
+    `).join('');
+
+    const filtered = state.coupons.mine.filter((c) => c.status === currentTab);
+
+    if (filtered.length === 0) {
+      const emptyMsg = currentTab === 'AVAILABLE' ? '暂无可用优惠券，去领券中心看看吧~'
+        : currentTab === 'USED' ? '暂无已使用的优惠券'
+        : '暂无已过期的优惠券';
+      viewContent.innerHTML = `
+        <div class="card p-6 space-y-4">
+          <div class="flex flex-wrap gap-2">${tabHtml}</div>
+        </div>
+        <div class="card p-12 text-center">
+          <div class="text-5xl mb-4">🎫</div>
+          <p class="text-slate-500">${emptyMsg}</p>
+          ${currentTab === 'AVAILABLE' ? '<button class="btn-primary mt-4" data-action="go-coupon-center">去领券中心</button>' : ''}
+        </div>
+      `;
+      return;
+    }
+
+    const couponCards = filtered
+      .map((c) => renderCouponCard(c, { showStatus: true }))
+      .join('');
+
+    viewContent.innerHTML = `
+      <div class="card p-6 space-y-4">
+        <div class="flex flex-wrap gap-2">${tabHtml}</div>
+      </div>
+      <div class="space-y-4">${couponCards}</div>
+    `;
+  }
+
   function renderBooks() {
     const search = state.bookSearch;
     const categoryOptions = state.categories
@@ -259,7 +426,8 @@ export function createViewController({
       }
     }
 
-    const total = Math.max(0, subtotal - memberDiscount) + shippingFee;
+    const couponDiscount = state.coupons.couponCalcResult?.valid ? state.coupons.couponCalcResult.discount : 0;
+    const total = Math.max(0, subtotal - memberDiscount - couponDiscount) + shippingFee;
 
     const cartList = state.cart
       .map(
@@ -328,6 +496,7 @@ export function createViewController({
           <div class="flex flex-wrap items-center justify-between gap-3 text-sm md:text-base">
             <div class="space-y-1">
               ${memberDiscount > 0 ? `<p class="text-teal-600">会员折扣 -${formatCurrency(memberDiscount)}</p>` : ''}
+              ${couponDiscount > 0 ? `<p class="text-orange-600">优惠券抵扣 -${formatCurrency(couponDiscount)}</p>` : ''}
               <p class="${shippingFee === 0 ? 'text-emerald-600' : 'text-slate-600'}">
                 运费：${shippingFee === 0 ? '包邮 🎉' : formatCurrency(shippingFee)}
               </p>
@@ -352,8 +521,52 @@ export function createViewController({
 
       ${state.cart.length > 0 ? `
       <div class="card p-6 space-y-4">
+        <h3 class="text-lg font-semibold">选择优惠券</h3>
+        ${state.coupons.applicable.length > 0 || state.coupons.notApplicable.length > 0 ? `
+          ${state.coupons.applicable.length > 0 ? `
+            <div class="space-y-3">
+              <p class="text-sm text-slate-500">可用优惠券（点击选择）</p>
+              ${state.coupons.applicable.map((c) => renderCouponCard(c, {
+                showSelect: 'userCoupon',
+                selected: state.checkout.selectedCouponId === c.userCouponId
+              })).join('')}
+            </div>
+          ` : ''}
+          ${state.coupons.notApplicable.length > 0 ? `
+            <div class="space-y-3 mt-4">
+              <p class="text-sm text-slate-400">不可用优惠券</p>
+              ${state.coupons.notApplicable.map((c) => `
+                <div class="coupon-card coupon-card-dimmed">
+                  <div class="coupon-left ${c.type === 'FIXED_AMOUNT' ? 'bg-gradient-to-br from-orange-400 to-amber-400' : 'bg-gradient-to-br from-teal-400 to-emerald-400'} opacity-50">
+                    <div class="coupon-value">${formatCouponValue(c)}</div>
+                    <div class="coupon-type-label">${c.type === 'FIXED_AMOUNT' ? '满减券' : '折扣券'}</div>
+                  </div>
+                  <div class="coupon-right">
+                    <div class="coupon-name">${escapeHtml(c.name)}</div>
+                    <div class="coupon-desc">${formatCouponDesc(c)}</div>
+                    <div class="coupon-meta"><span class="text-red-400">未达使用门槛</span></div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        ` : `
+          <p class="text-sm text-slate-500">暂无可用优惠券，<a href="javascript:void(0)" data-action="go-coupon-center" class="text-teal-600 hover:text-teal-700">去领券中心 →</a></p>
+        `}
+        ${state.checkout.selectedCouponId ? `
+          <div class="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl p-3">
+            <div>
+              <p class="text-sm text-orange-700">已选择优惠券，抵扣 <span class="font-semibold">${formatCurrency(couponDiscount)}</span></p>
+            </div>
+            <button class="btn-outline text-sm" data-action="clear-coupon">取消使用</button>
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="card p-6 space-y-4">
         <h3 class="text-lg font-semibold">订单确认</h3>
         <form data-form="checkout" class="space-y-3" novalidate>
+          <input type="hidden" name="userCouponId" value="${state.checkout.selectedCouponId || ''}" />
           <div class="space-y-1">
             <select class="input input-lg" name="addressId" required>
               <option value="">选择配送地址</option>
@@ -421,6 +634,13 @@ export function createViewController({
               <p class="text-lg font-semibold">${formatCurrency(order.total)}</p>
             </div>
           </div>
+          ${order.discount > 0 || order.couponCode ? `
+          <div class="flex flex-wrap gap-4 text-sm bg-orange-50 rounded-lg p-3 border border-orange-100">
+            ${order.subtotal !== undefined && order.subtotal !== null ? `<p class="text-slate-500">商品金额：${formatCurrency(order.subtotal)}</p>` : ''}
+            ${order.discount > 0 ? `<p class="text-orange-600">优惠券抵扣：-${formatCurrency(order.discount)}</p>` : ''}
+            ${order.couponCode ? `<p class="text-slate-500">券码：${order.couponCode}</p>` : ''}
+          </div>
+          ` : ''}
           ${order.memberDiscount > 0 || order.shippingFee > 0 ? `
           <div class="flex flex-wrap gap-4 text-sm bg-slate-50 rounded-lg p-3">
             <p class="text-slate-500">商品金额：${formatCurrency(order.subtotal)}</p>
@@ -576,6 +796,7 @@ export function createViewController({
         <button class="btn-outline" data-action="admin-tab" data-tab="books">书籍管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="categories">分类管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="orders">订单管理</button>
+        <button class="btn-outline" data-action="admin-tab" data-tab="coupons">优惠券管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="stock">库存预警</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="restock-logs">补货流水</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="goals">目标管理</button>
@@ -753,6 +974,86 @@ export function createViewController({
           </div>
         </div>
         <div class="grid lg:grid-cols-2 gap-4">${orderCards || '<div class="text-slate-500">暂无订单</div>'}</div>
+      `;
+    }
+
+    if (state.admin.tab === 'coupons') {
+      const couponRows = (state.admin.coupons || [])
+        .map((coupon) => {
+          const isFixed = coupon.type === 'FIXED_AMOUNT';
+          const isActive = coupon.status === 'ACTIVE';
+          return `
+            <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-3 hover-card ${!isActive ? 'opacity-60' : ''}">
+              <div class="flex justify-between items-start">
+                <div>
+                  <h4 class="font-semibold">${escapeHtml(coupon.name)}</h4>
+                  <p class="text-sm text-slate-500">${coupon.code}</p>
+                </div>
+                <span class="badge ${isActive ? 'badge-active' : 'badge-inactive'}">${isActive ? '进行中' : coupon.status === 'EXPIRED' ? '已过期' : '已停用'}</span>
+              </div>
+              <div class="flex flex-wrap gap-2 text-sm text-slate-600">
+                <span class="badge ${isFixed ? 'bg-orange-100 text-orange-700' : 'bg-teal-100 text-teal-700'}">${isFixed ? '满减券' : '折扣券'}</span>
+                <span>${isFixed ? `减¥${Number(coupon.discountAmount).toFixed(0)}` : `${coupon.discountPercentage}%折扣`}</span>
+                <span>满¥${Number(coupon.minAmount).toFixed(0)}</span>
+                <span>已领${coupon.claimedQuantity}/${coupon.totalQuantity}</span>
+              </div>
+              <div class="text-xs text-slate-400">
+                有效期：${new Date(coupon.validFrom).toLocaleDateString('zh-CN')} ~ ${new Date(coupon.validUntil).toLocaleDateString('zh-CN')}
+              </div>
+              <div class="flex flex-wrap gap-2">
+                ${isActive ? `<button class="btn-outline" data-action="deactivate-coupon" data-id="${coupon.id}">停用</button>` : ''}
+                ${!isActive && coupon.status === 'INACTIVE' ? `<button class="btn-outline" data-action="activate-coupon" data-id="${coupon.id}">启用</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      content = `
+        <div class="card p-6 space-y-4">
+          <h3 class="text-lg font-semibold">新增优惠券</h3>
+          <form data-form="admin-coupon" class="grid md:grid-cols-2 gap-3" novalidate>
+            <div class="space-y-1">
+              <input class="input" name="name" placeholder="优惠券名称" required />
+            </div>
+            <div class="space-y-1">
+              <select class="input" name="type" required>
+                <option value="FIXED_AMOUNT">满减券</option>
+                <option value="PERCENTAGE">折扣券</option>
+              </select>
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="discountAmount" type="number" step="0.01" min="0.01" placeholder="减免金额（满减券填）" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="discountPercentage" type="number" step="0.1" min="0.1" max="100" placeholder="折扣百分比（折扣券填）" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="maxDiscount" type="number" step="0.01" min="0.01" placeholder="折上限金额（选填）" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="minAmount" type="number" step="0.01" min="0" placeholder="使用门槛（元）" value="0" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="totalQuantity" type="number" min="1" placeholder="发放总量" required />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="limitPerUser" type="number" min="1" placeholder="每人限领" value="1" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="validFrom" type="datetime-local" required />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="validUntil" type="datetime-local" required />
+            </div>
+            <div class="space-y-1 md:col-span-2">
+              <input class="input" name="description" placeholder="描述（选填）" />
+            </div>
+            <div class="md:col-span-2 flex justify-end">
+              <button class="btn-primary" type="submit">创建优惠券</button>
+            </div>
+          </form>
+        </div>
+        <div class="grid lg:grid-cols-2 gap-4">${couponRows || '<div class="text-slate-500">暂无优惠券</div>'}</div>
       `;
     }
 
@@ -1570,7 +1871,9 @@ export function createViewController({
     wallet: renderWallet,
     notifications: renderNotifications,
     profile: renderProfile,
-    admin: renderAdmin
+    admin: renderAdmin,
+    'coupon-center': renderCouponCenter,
+    'my-coupons': renderMyCoupons
   };
 
   function renderView() {

@@ -42,11 +42,12 @@ router.get('/available', asyncHandler(async (req, res) => {
     where: {
       status: 'ACTIVE',
       validFrom: { lte: now },
-      validUntil: { gte: now },
-      claimedQuantity: { lt: prisma.coupon.fields.totalQuantity }
+      validUntil: { gte: now }
     },
     orderBy: { createdAt: 'desc' }
   });
+
+  const available = coupons.filter((c) => c.claimedQuantity < c.totalQuantity);
 
   const myClaimed = await prisma.userCoupon.findMany({
     where: { userId: req.user.id },
@@ -66,7 +67,7 @@ router.get('/available', asyncHandler(async (req, res) => {
     return acc;
   }, {});
 
-  const result = coupons.map((c) => {
+  const result = available.map((c) => {
     const userClaimed = claimCountMap[c.id] || 0;
     return {
       id: c.id,

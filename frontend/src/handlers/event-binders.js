@@ -153,7 +153,11 @@ export function bindEventHandlers({
   openResetModal,
   escapeHtmlAttr,
   loadMember,
-  loadWallet
+  loadWallet,
+  loadCoupons,
+  loadMyCoupons,
+  loadApplicableCoupons,
+  calculateCoupon
 }) {
   function formatCurrency(value) {
     return `¥${Number(value).toFixed(2)}`;
@@ -494,6 +498,7 @@ export function bindEventHandlers({
         addressId: data.addressId,
         paymentMethod: data.paymentMethod
       });
+      parsed.userCouponId = data.userCouponId || null;
       const submitBtn = form.querySelector('button[type="submit"]');
       const originalText = submitBtn?.textContent;
       if (submitBtn) {
@@ -505,8 +510,11 @@ export function bindEventHandlers({
       try {
         await api.checkout(parsed);
         showToast('订单已生成，请完成支付', 'success');
+        state.checkout.selectedCouponId = null;
+        state.coupons.couponCalcResult = null;
         await loadCart();
         await loadOrders();
+        await loadMyCoupons();
         state.view = 'orders';
         safeRender();
       } finally {
@@ -584,6 +592,38 @@ export function bindEventHandlers({
       await api.rechargeWallet(amount);
       showToast('充值成功', 'success');
       await loadWallet(1);
+    },
+    'admin-coupon': async (form) => {
+      const data = getFormData(form);
+      const payload = {
+        name: data.name,
+        type: data.type,
+        minAmount: parseFloat(data.minAmount) || 0,
+        totalQuantity: parseInt(data.totalQuantity, 10),
+        limitPerUser: parseInt(data.limitPerUser, 10) || 1,
+        validFrom: data.validFrom,
+        validUntil: data.validUntil,
+        description: data.description || undefined
+      };
+      if (data.type === 'FIXED_AMOUNT') {
+        payload.discountAmount = parseFloat(data.discountAmount);
+        if (isNaN(payload.discountAmount) || payload.discountAmount <= 0) {
+          throw new Error('满减券请填写减免金额');
+        }
+      } else {
+        payload.discountPercentage = parseFloat(data.discountPercentage);
+        if (isNaN(payload.discountPercentage) || payload.discountPercentage <= 0 || payload.discountPercentage > 100) {
+          throw new Error('折扣券请填写有效的折扣百分比(0-100)');
+        }
+      }
+      if (data.maxDiscount) {
+        payload.maxDiscount = parseFloat(data.maxDiscount);
+      }
+      await api.admin.createCoupon(payload);
+      showToast('优惠券创建成功', 'success');
+      await loadAdmin();
+      safeRender();
+      form.reset();
     }
   };
 
@@ -1086,6 +1126,64 @@ export function bindEventHandlers({
       await loadAdmin();
       safeRender();
       showToast('目标已删除', 'success');
+    },
+    'claim-coupon': async (target) => {
+      if (!state.user) {
+        openLoginModal();
+        return;
+      }
+      const couponId = target.dataset.id;
+      await api.claimCoupon(couponId);
+      showToast('优惠券领取成功', 'success');
+      await loadCoupons();
+      safeRender();
+    },
+    'select-coupon': async (target) => {
+      const userCouponId = target.dataset.id;
+      if (state.checkout.selectedCouponId === userCouponId) {
+        state.checkout.selectedCouponId = null;
+        state.coupons.couponCalcResult = null;
+      } else {
+        state.checkout.selectedCouponId = userCouponId;
+        const subtotal = state.cart.reduce((sum, item) => {
+          let price = item.book.price;
+          if (item.specPrice !== undefined) price = item.specPrice;
+          return sum + price * item.quantity;
+        }, 0);
+        try {
+          const result = await api.calculateCoupon(userCouponId, subtotal);
+          state.coupons.couponCalcResult = result;
+        } catch (error) {
+          state.checkout.selectedCouponId = null;
+          state.coupons.couponCalcResult = null;
+          showToast(error.message || '优惠券不可用', 'error');
+        }
+      }
+      safeRender();
+    },
+    'clear-coupon': async () => {
+      state.checkout.selectedCouponId = null;
+      state.coupons.couponCalcResult = null;
+      safeRender();
+    },
+    'coupon-tab': async (target) => {
+      state.coupons.mineTab = target.dataset.tab;
+      safeRender();
+    },
+    'go-coupon-center': async () => {
+      await setView('coupon-center');
+    },
+    'deactivate-coupon': async (target) => {
+      await api.admin.deactivateCoupon(target.dataset.id);
+      await loadAdmin();
+      safeRender();
+      showToast('优惠券已停用', 'success');
+    },
+    'activate-coupon': async (target) => {
+      await api.admin.updateCoupon(target.dataset.id, { status: 'ACTIVE' });
+      await loadAdmin();
+      safeRender();
+      showToast('优惠券已启用', 'success');
     }
   };
 

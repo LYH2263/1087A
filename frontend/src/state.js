@@ -31,7 +31,8 @@ export const state = {
     addresses: false,
     admin: false,
     notifications: false,
-    member: false
+    member: false,
+    coupons: false
   },
   notifications: {
     list: [],
@@ -45,6 +46,7 @@ export const state = {
     books: [],
     categories: [],
     orders: [],
+    coupons: [],
     stats: null,
     editingBook: null,
     stockWarnings: [],
@@ -89,6 +91,19 @@ export const state = {
       totalExpense: '0.00',
       totalExpenseCents: 0
     }
+  },
+  coupons: {
+    available: [],
+    mine: [],
+    mineCounts: { AVAILABLE: 0, USED: 0, EXPIRED: 0 },
+    mineTab: 'AVAILABLE',
+    applicable: [],
+    notApplicable: [],
+    selectedCouponId: null,
+    couponCalcResult: null
+  },
+  checkout: {
+    selectedCouponId: null
   }
 };
 

@@ -209,3 +209,123 @@ h1, h2, h3, h4 {
   color: #94a3b8;
   font-size: 14px;
 }
+
+.coupon-card {
+  display: flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.coupon-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.2);
+}
+
+.coupon-card-selected {
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+}
+
+.coupon-card-dimmed {
+  opacity: 0.6;
+}
+
+.coupon-card-dimmed:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.coupon-left {
+  width: 120px;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  padding: 16px 8px;
+  position: relative;
+}
+
+.coupon-left::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  background: #fff;
+  border-left: 2px dashed #e2e8f0;
+}
+
+.coupon-value {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.coupon-type-label {
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+.coupon-right {
+  flex: 1;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.coupon-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.coupon-desc {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.coupon-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.coupon-action {
+  margin-top: 4px;
+}
+
+.coupon-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.coupon-badge-available {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.coupon-badge-used {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.coupon-badge-expired {
+  background: #fef2f2;
+  color: #dc2626;
+}

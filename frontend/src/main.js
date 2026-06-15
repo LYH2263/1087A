@@ -48,6 +48,16 @@ const toastMap = [
   [/spec_required/i, '该书籍有多个规格，请选择规格'],
   [/spec_not_found/i, '所选规格不存在，请重新选择'],
   [/spec_name_exists/i, '规格名称已存在'],
+  [/coupon_not_found/i, '优惠券不存在'],
+  [/coupon_expired/i, '优惠券已过期'],
+  [/coupon_not_active/i, '优惠券尚未生效'],
+  [/coupon_not_available/i, '优惠券不可用'],
+  [/coupon_sold_out/i, '优惠券已被领完'],
+  [/coupon_limit_reached/i, '已达到领取上限'],
+  [/coupon_already_used/i, '优惠券已被使用'],
+  [/coupon_concurrent_use/i, '优惠券已被其他订单使用'],
+  [/min_amount_not_reached/i, '未达到优惠券使用门槛'],
+  [/user_coupon_not_found/i, '未找到该优惠券'],
   [/internal server error/i, '服务器开小差了，请稍后再试']
 ];
 
@@ -214,7 +224,7 @@ async function loadWallet(page = 1) {
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
-  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview] = await Promise.all([
+  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview, coupons] = await Promise.all([
     api.admin.getBooks(),
     api.admin.getCategories(),
     api.admin.getOrders(),
@@ -222,7 +232,8 @@ async function loadAdmin() {
     api.admin.getStockThreshold(),
     api.admin.getStockWarnings(),
     api.admin.getRestockLogs({ page: 1, pageSize: 20 }),
-    api.admin.getGoalsOverview()
+    api.admin.getGoalsOverview(),
+    api.admin.getCoupons()
   ]);
   state.admin.books = books;
   state.admin.categories = categories;
@@ -234,6 +245,7 @@ async function loadAdmin() {
   state.admin.restockLogs = restockLogs.logs;
   state.admin.restockLogStats = { total: restockLogs.total, page: restockLogs.page, pageSize: restockLogs.pageSize };
   state.admin.goalsOverview = goalsOverview;
+  state.admin.coupons = coupons;
   state.loading.admin = false;
 }
 
@@ -249,6 +261,46 @@ async function loadNotifications(page = 1) {
   state.notifications.unreadCount = data.unreadCount;
   state.loading.notifications = false;
   safeRender();
+}
+
+async function loadCoupons() {
+  if (!state.user) return;
+  state.loading.coupons = true;
+  safeRender();
+  const data = await api.getAvailableCoupons();
+  state.coupons.available = data;
+  state.loading.coupons = false;
+  safeRender();
+}
+
+async function loadMyCoupons() {
+  if (!state.user) return;
+  const data = await api.getMyCoupons();
+  state.coupons.mine = data.items;
+  state.coupons.mineCounts = data.counts;
+}
+
+async function loadApplicableCoupons() {
+  if (!state.user || state.cart.length === 0) return;
+  const subtotal = state.cart.reduce((sum, item) => {
+    let price = item.book.price;
+    if (item.specPrice !== undefined) price = item.specPrice;
+    return sum + price * item.quantity;
+  }, 0);
+  try {
+    const data = await api.getApplicableCoupons(subtotal);
+    state.coupons.applicable = data.applicable;
+    state.coupons.notApplicable = data.notApplicable;
+  } catch (e) {
+    state.coupons.applicable = [];
+    state.coupons.notApplicable = [];
+  }
+}
+
+async function calculateCoupon(userCouponId, subtotal) {
+  const result = await api.calculateCoupon(userCouponId, subtotal);
+  state.coupons.couponCalcResult = result;
+  return result;
 }
 
 async function loadUnreadNotificationCount() {
@@ -293,7 +345,8 @@ const viewLoaders = {
     await loadWishlist();
   },
   cart: async () => {
-    await Promise.all([loadCart(), loadAddresses()]);
+    await Promise.all([loadCart(), loadAddresses(), loadMyCoupons()]);
+    await loadApplicableCoupons();
     try {
       const balanceData = await api.getWalletBalance();
       state.wallet.balance = balanceData.balance;
@@ -306,7 +359,9 @@ const viewLoaders = {
   wallet: () => loadWallet(1),
   notifications: () => loadNotifications(1),
   profile: loadAddresses,
-  admin: loadAdmin
+  admin: loadAdmin,
+  'coupon-center': loadCoupons,
+  'my-coupons': loadMyCoupons
 };
 
 async function setView(view) {
@@ -443,7 +498,11 @@ bindEventHandlers({
   openResetModal,
   escapeHtmlAttr,
   loadMember,
-  loadWallet
+  loadWallet,
+  loadCoupons,
+  loadMyCoupons,
+  loadApplicableCoupons,
+  calculateCoupon
 });
 
 let unreadPollInterval = null;
