@@ -274,6 +274,7 @@ async function loadNotifications(page = 1) {
   state.notifications.pageSize = data.pageSize;
   state.notifications.unreadCount = data.unreadCount;
   state.loading.notifications = false;
+  updateNotificationBadge();
   safeRender();
 }
 

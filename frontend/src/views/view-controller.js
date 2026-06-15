@@ -1809,16 +1809,9 @@ export function createViewController({
 
   function renderNotifications() {
     viewTitle.innerHTML = `
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-xl font-semibold">消息中心</h2>
-          <p class="text-sm text-slate-500">查看订单状态变更通知</p>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn-outline" data-action="mark-all-read" ${state.notifications.unreadCount === 0 ? 'disabled' : ''}>
-            全部已读 (${state.notifications.unreadCount})
-          </button>
-        </div>
+      <div>
+        <h2 class="text-xl font-semibold">消息中心</h2>
+        <p class="text-sm text-slate-500">查看订单状态变更通知</p>
       </div>
     `;
 
@@ -1909,6 +1902,9 @@ export function createViewController({
         <p class="text-sm text-slate-500">
           共 ${total} 条消息，${unreadCount} 条未读
         </p>
+        <button class="btn-outline" data-action="mark-all-read" ${unreadCount === 0 ? 'disabled' : ''}>
+          全部已读 (${unreadCount})
+        </button>
       </div>
       <div class="space-y-4">
         ${notificationList}
