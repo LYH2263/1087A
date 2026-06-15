@@ -236,7 +236,9 @@ async function loadWallet(page = 1) {
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
-  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview, coupons, afterSales] = await Promise.all([
+  safeRender();
+
+  const results = await Promise.allSettled([
     api.admin.getBooks(),
     api.admin.getCategories(),
     api.admin.getOrders(),
@@ -248,19 +250,38 @@ async function loadAdmin() {
     api.admin.getCoupons(),
     api.admin.getAfterSales()
   ]);
-  state.admin.books = books;
-  state.admin.categories = categories;
-  state.admin.orders = orders;
-  state.admin.stats = stats;
-  state.admin.stockThreshold = stockThreshold;
-  state.admin.stockWarnings = stockWarnings.books;
-  state.admin.stockWarningStats = { total: stockWarnings.total, zeroStockCount: stockWarnings.zeroStockCount };
-  state.admin.restockLogs = restockLogs.logs;
-  state.admin.restockLogStats = { total: restockLogs.total, page: restockLogs.page, pageSize: restockLogs.pageSize };
-  state.admin.goalsOverview = goalsOverview;
-  state.admin.coupons = coupons;
-  state.admin.afterSales = afterSales;
+
+  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview, coupons, afterSales] = results.map((r) =>
+    r.status === 'fulfilled' ? r.value : null
+  );
+
+  if (results.some((r) => r.status === 'rejected')) {
+    const failed = results
+      .map((r, i) => r.status === 'rejected' ? i : -1)
+      .filter((i) => i >= 0);
+    const names = ['书籍', '分类', '订单', '统计', '库存阈值', '库存预警', '补货流水', '目标概览', '优惠券', '售后工单'];
+    const failedNames = failed.map((i) => names[i] || `API[${i}]`);
+    showToast(`部分数据加载失败：${failedNames.join('、')}`, 'error');
+  }
+
+  state.admin.books = books || [];
+  state.admin.categories = categories || [];
+  state.admin.orders = orders || [];
+  state.admin.stats = stats || null;
+  state.admin.stockThreshold = stockThreshold || { global: { threshold: 10 }, bookThresholds: [] };
+  if (stockWarnings) {
+    state.admin.stockWarnings = stockWarnings.books;
+    state.admin.stockWarningStats = { total: stockWarnings.total, zeroStockCount: stockWarnings.zeroStockCount };
+  }
+  if (restockLogs) {
+    state.admin.restockLogs = restockLogs.logs;
+    state.admin.restockLogStats = { total: restockLogs.total, page: restockLogs.page, pageSize: restockLogs.pageSize };
+  }
+  state.admin.goalsOverview = goalsOverview || null;
+  state.admin.coupons = coupons || [];
+  state.admin.afterSales = afterSales || [];
   state.loading.admin = false;
+  safeRender();
 }
 
 async function loadNotifications(page = 1) {
