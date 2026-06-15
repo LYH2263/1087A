@@ -55,6 +55,23 @@ enum PaymentMethod {
   ALIPAY
   CARD
   COD
+  BALANCE
+}
+
+enum WalletTransactionType {
+  RECHARGE
+  CONSUME
+  REFUND
+  ADJUST
+}
+
+enum WalletTransactionSource {
+  RECHARGE
+  ORDER_PAY
+  ORDER_CANCEL
+  ORDER_REFUND
+  AFTER_SALE_REFUND
+  ADMIN_ADJUST
 }
 
 enum CouponType {
@@ -127,6 +144,41 @@ model PointLog {
   @@index([userId, createdAt])
 }
 
+model Wallet {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  balanceCents   Int      @default(0)
+  version        Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+  transactions   WalletTransaction[]
+}
+
+model WalletTransaction {
+  id              String                 @id @default(cuid())
+  walletId        String
+  userId          String
+  type            WalletTransactionType
+  source          WalletTransactionSource
+  amountCents     Int
+  balanceBefore   Int
+  balanceAfter    Int
+  orderId         String?
+  afterSaleId     String?
+  rechargeId      String?
+  operatorId      String?
+  remark          String?
+  createdAt       DateTime               @default(now())
+  wallet          Wallet                 @relation(fields: [walletId], references: [id])
+
+  @@unique([orderId, source])
+  @@unique([afterSaleId, source])
+  @@unique([rechargeId, source])
+  @@index([userId, createdAt])
+  @@index([walletId, createdAt])
+}
+
 model User {
   id              String          @id @default(cuid())
   username        String          @unique
@@ -146,6 +198,7 @@ model User {
   afterSales      AfterSale[]
   notifications   Notification[]
   memberProfile   MemberProfile?
+  wallet          Wallet?
 }
 
 model Session {

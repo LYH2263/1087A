@@ -13,6 +13,7 @@ const {
   calculateEarnedPoints,
   calculateLevelByPoints
 } = require('../utils/member');
+const { refundBalance } = require('../utils/wallet');
 
 const router = express.Router();
 
@@ -474,6 +475,18 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
   const refundedPoints = calculateEarnedPoints(order.totalCents);
 
   const updated = await prisma.$transaction(async (tx) => {
+    if (order.paymentMethod === 'BALANCE') {
+      await refundBalance({
+        userId: order.userId,
+        amountCents: order.totalCents,
+        source: 'ORDER_REFUND',
+        orderId: order.id,
+        operatorId: req.user.id,
+        remark: `订单退款，订单号：${order.id}`,
+        tx
+      });
+    }
+
     await tx.order.update({
       where: { id: order.id },
       data: { status: 'REFUNDED' }
@@ -1173,7 +1186,8 @@ router.post('/after-sales/:id/reject', asyncHandler(async (req, res) => {
 
 router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
   const afterSale = await prisma.afterSale.findUnique({
-    where: { id: req.params.id }
+    where: { id: req.params.id },
+    include: { order: true }
   });
 
   if (!afterSale) {
@@ -1187,6 +1201,18 @@ router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
   const refundedPoints = calculateEarnedPoints(afterSale.totalAmountCents);
 
   await prisma.$transaction(async (tx) => {
+    if (afterSale.type === 'RETURN' && afterSale.order.paymentMethod === 'BALANCE') {
+      await refundBalance({
+        userId: afterSale.userId,
+        amountCents: afterSale.totalAmountCents,
+        source: 'AFTER_SALE_REFUND',
+        afterSaleId: afterSale.id,
+        operatorId: req.user.id,
+        remark: `售后退款，售后单号：${afterSale.id}`,
+        tx
+      });
+    }
+
     await tx.afterSale.update({
       where: { id: afterSale.id },
       data: {

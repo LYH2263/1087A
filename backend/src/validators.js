@@ -82,7 +82,7 @@ const addressSchema = z.object({
 
 const checkoutSchema = z.object({
   addressId: z.string().min(1),
-  paymentMethod: z.enum(['WECHAT', 'ALIPAY', 'CARD', 'COD']),
+  paymentMethod: z.enum(['WECHAT', 'ALIPAY', 'CARD', 'COD', 'BALANCE']),
   userCouponId: z.string().optional().nullable()
 });
 

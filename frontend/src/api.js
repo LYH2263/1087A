@@ -477,5 +477,19 @@ export const api = {
   },
   getMemberPreview(subtotal) {
     return request(`/member/preview?subtotal=${Math.round(Number(subtotal) * 100)}`);
+  },
+  getWalletBalance() {
+    return request('/wallet/balance');
+  },
+  rechargeWallet(amount) {
+    return request('/wallet/recharge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount })
+    });
+  },
+  getWalletTransactions(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/wallet/transactions${query ? `?${query}` : ''}`);
   }
 };

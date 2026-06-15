@@ -152,7 +152,8 @@ export function bindEventHandlers({
   openForgotModal,
   openResetModal,
   escapeHtmlAttr,
-  loadMember
+  loadMember,
+  loadWallet
 }) {
   function formatCurrency(value) {
     return `¥${Number(value).toFixed(2)}`;
@@ -573,6 +574,16 @@ export function bindEventHandlers({
       await loadAdmin();
       safeRender();
       form.reset();
+    },
+    'wallet-recharge': async (form) => {
+      const data = getFormData(form);
+      const amount = parseFloat(data.amount);
+      if (isNaN(amount) || amount <= 0) {
+        throw new Error('请输入有效的充值金额');
+      }
+      await api.rechargeWallet(amount);
+      showToast('充值成功', 'success');
+      await loadWallet(1);
     }
   };
 
@@ -659,6 +670,9 @@ export function bindEventHandlers({
       await api.clearCart();
       await loadCart();
       safeRender();
+    },
+    'go-wallet': async () => {
+      await setView('wallet');
     },
     'cancel-order': async (target) => {
       await api.cancelOrder(target.dataset.id);
@@ -980,6 +994,28 @@ export function bindEventHandlers({
       const totalPages = Math.ceil(state.member.pointLogs.total / state.member.pointLogs.pageSize);
       if (currentPage < totalPages) {
         await loadMember(currentPage + 1);
+      }
+    },
+    'recharge-quick': async (target) => {
+      const amount = parseFloat(target.dataset.amount);
+      if (isNaN(amount) || amount <= 0) {
+        throw new Error('无效的充值金额');
+      }
+      await api.rechargeWallet(amount);
+      showToast('充值成功', 'success');
+      await loadWallet(1);
+    },
+    'wallet-tx-prev': async () => {
+      const currentPage = state.wallet.transactions.page;
+      if (currentPage > 1) {
+        await loadWallet(currentPage - 1);
+      }
+    },
+    'wallet-tx-next': async () => {
+      const currentPage = state.wallet.transactions.page;
+      const totalPages = Math.ceil(state.wallet.transactions.total / state.wallet.transactions.pageSize);
+      if (currentPage < totalPages) {
+        await loadWallet(currentPage + 1);
       }
     },
     'add-goal': async (target) => {

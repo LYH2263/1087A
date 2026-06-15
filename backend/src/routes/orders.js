@@ -6,6 +6,7 @@ const { checkoutSchema, reviewSchema } = require('../validators');
 const { fromCents } = require('../utils/money');
 const { calculateDiscount, isCouponExpired } = require('../utils/coupon');
 const { createOrderNotification } = require('../utils/notification');
+const { deductBalance, refundBalance } = require('../utils/wallet');
 const {
   getLevelConfig,
   calculateEarnedPoints,
@@ -308,6 +309,27 @@ router.post('/:id/pay', asyncHandler(async (req, res) => {
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    if (order.paymentMethod === 'BALANCE') {
+      const deductResult = await deductBalance({
+        userId: order.userId,
+        amountCents: order.totalCents,
+        source: 'ORDER_PAY',
+        orderId: order.id,
+        remark: `订单支付，订单号：${order.id}`,
+        tx
+      });
+
+      if (deductResult.isDuplicate) {
+        const existingOrder = await tx.order.findUnique({
+          where: { id: order.id },
+          include: { items: true }
+        });
+        if (existingOrder.status === 'PAID') {
+          return existingOrder;
+        }
+      }
+    }
+
     await tx.order.update({
       where: { id: order.id },
       data: { status: 'PAID' }
@@ -326,7 +348,9 @@ router.post('/:id/pay', asyncHandler(async (req, res) => {
     });
   });
 
-  await createOrderNotification(req.user.id, 'ORDER_PAID', updated);
+  if (updated.status === 'PAID') {
+    await createOrderNotification(req.user.id, 'ORDER_PAID', updated);
+  }
 
   res.json(mapOrder(updated));
 }));
@@ -341,11 +365,22 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
     throw new ApiError(404, 'ORDER_NOT_FOUND');
   }
 
-  if (order.status !== 'PENDING_PAYMENT') {
+  if (order.status !== 'PENDING_PAYMENT' && order.status !== 'PAID') {
     throw new ApiError(400, 'ORDER_NOT_CANCELABLE');
   }
 
   await prisma.$transaction(async (tx) => {
+    if (order.status === 'PAID' && order.paymentMethod === 'BALANCE') {
+      await refundBalance({
+        userId: order.userId,
+        amountCents: order.totalCents,
+        source: 'ORDER_CANCEL',
+        orderId: order.id,
+        remark: `订单取消退款，订单号：${order.id}`,
+        tx
+      });
+    }
+
     await tx.order.update({
       where: { id: order.id },
       data: { status: 'CANCELED' }

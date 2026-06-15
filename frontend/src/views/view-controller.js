@@ -360,7 +360,7 @@ export function createViewController({
               ${addressOptions}
             </select>
           </div>
-          <div class="grid md:grid-cols-3 gap-3" data-error-group="paymentMethod">
+          <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-3" data-error-group="paymentMethod">
             <label class="card p-3 flex items-center gap-2 cursor-pointer">
               <input type="radio" name="paymentMethod" value="WECHAT" checked /> 微信支付
             </label>
@@ -368,9 +368,16 @@ export function createViewController({
               <input type="radio" name="paymentMethod" value="ALIPAY" /> 支付宝
             </label>
             <label class="card p-3 flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="paymentMethod" value="BALANCE" /> 余额支付
+            </label>
+            <label class="card p-3 flex items-center gap-2 cursor-pointer">
               <input type="radio" name="paymentMethod" value="COD" /> 货到付款
             </label>
           </div>
+          <p class="text-sm text-slate-500">
+            💰 当前余额：<span class="font-semibold text-teal-600">${state.wallet?.balance || '0.00'}</span>
+            <a href="javascript:void(0)" data-action="go-wallet" class="text-teal-600 hover:text-teal-700 ml-2">去充值 →</a>
+          </p>
           <div class="flex justify-end">
             <button class="btn-primary" type="submit">生成待支付订单</button>
           </div>
@@ -1443,12 +1450,124 @@ export function createViewController({
     `;
   }
 
+  function renderWallet() {
+    viewTitle.innerHTML = `
+      <div>
+        <h2 class="text-xl font-semibold">我的钱包</h2>
+        <p class="text-sm text-slate-500">查看余额、流水与充值</p>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后查看钱包。</div>`;
+      return;
+    }
+
+    if (state.wallet.loading) {
+      viewContent.innerHTML = renderSkeleton();
+      return;
+    }
+
+    const wallet = state.wallet;
+    const txs = wallet.transactions;
+
+    const txItems = txs.list.map((tx) => {
+      const isIncome = tx.type === 'RECHARGE' || tx.type === 'REFUND' || tx.type === 'ADJUST';
+      const icon = isIncome ? '↑' : '↓';
+      return `
+        <div class="flex items-center justify-between py-3 border-b border-slate-100 last:border-b-0">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${isIncome ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}">
+              ${icon}
+            </div>
+            <div>
+              <p class="font-medium text-sm">${tx.remark || tx.sourceText}</p>
+              <p class="text-xs text-slate-400">${new Date(tx.createdAt).toLocaleString('zh-CN')}</p>
+              ${tx.orderId ? `<p class="text-xs text-slate-400">订单号：${tx.orderId}</p>` : ''}
+            </div>
+          </div>
+          <p class="text-lg font-semibold ${isIncome ? 'text-emerald-600' : 'text-amber-600'}">
+            ${isIncome ? '+' : '-'}${tx.amount}
+          </p>
+        </div>
+      `;
+    }).join('');
+
+    const txTotalPages = Math.ceil(txs.total / txs.pageSize);
+
+    viewContent.innerHTML = `
+      <div class="card p-6" style="background: linear-gradient(135deg, #0d9488 0%, #14b8a6 50%, #2dd4bf 100%); color: white;">
+        <div class="space-y-3">
+          <p class="text-sm opacity-80">账户余额</p>
+          <p class="text-4xl font-bold">${wallet.balance}</p>
+          <div class="grid grid-cols-2 gap-4 pt-4">
+            <div class="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+              <p class="text-xs opacity-80">累计充值</p>
+              <p class="text-lg font-semibold">${txs.totalIncome}</p>
+            </div>
+            <div class="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+              <p class="text-xs opacity-80">累计消费</p>
+              <p class="text-lg font-semibold">${txs.totalExpense}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-6 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h3 class="text-lg font-semibold">模拟充值</h3>
+        </div>
+        <form data-form="wallet-recharge" class="flex flex-wrap gap-3" novalidate>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-outline" data-action="recharge-quick" data-amount="10">¥10</button>
+            <button type="button" class="btn-outline" data-action="recharge-quick" data-amount="50">¥50</button>
+            <button type="button" class="btn-outline" data-action="recharge-quick" data-amount="100">¥100</button>
+            <button type="button" class="btn-outline" data-action="recharge-quick" data-amount="500">¥500</button>
+          </div>
+          <div class="flex gap-2 flex-1 min-w-[200px]">
+            <input class="input flex-1" type="number" name="amount" step="0.01" min="0.01" placeholder="自定义金额" />
+            <button class="btn-primary" type="submit">充值</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card p-6 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h3 class="text-lg font-semibold">余额流水</h3>
+          <div class="flex gap-3 text-sm">
+            <span class="badge bg-emerald-100 text-emerald-700">收入 ${txs.totalIncome}</span>
+            <span class="badge bg-amber-100 text-amber-700">支出 ${txs.totalExpense}</span>
+          </div>
+        </div>
+        ${txs.list.length === 0 ? `
+          <div class="text-center py-12 text-slate-500">
+            <div class="text-5xl mb-3">💰</div>
+            <p>暂无流水记录</p>
+            <p class="text-sm mt-1">充值后将显示流水记录</p>
+          </div>
+        ` : `
+          <div class="divide-y divide-slate-100">
+            ${txItems}
+          </div>
+        `}
+        ${txTotalPages > 1 ? `
+          <div class="flex justify-center gap-2 pt-4 border-t border-slate-100">
+            <button class="btn-outline" data-action="wallet-tx-prev" ${txs.page <= 1 ? 'disabled' : ''}>上一页</button>
+            <span class="px-3 py-2 text-sm text-slate-600">第 ${txs.page} / ${txTotalPages} 页</span>
+            <button class="btn-outline" data-action="wallet-tx-next" ${txs.page >= txTotalPages ? 'disabled' : ''}>下一页</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   const viewRenderers = {
     books: renderBooks,
     cart: renderCart,
     wishlist: renderWishlist,
     orders: renderOrders,
     member: renderMember,
+    wallet: renderWallet,
     notifications: renderNotifications,
     profile: renderProfile,
     admin: renderAdmin

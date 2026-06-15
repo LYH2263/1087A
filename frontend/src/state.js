@@ -74,6 +74,21 @@ export const state = {
     },
     levels: [],
     preview: null
+  },
+  wallet: {
+    loading: false,
+    balance: '0.00',
+    balanceCents: 0,
+    transactions: {
+      list: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+      totalIncome: '0.00',
+      totalIncomeCents: 0,
+      totalExpense: '0.00',
+      totalExpenseCents: 0
+    }
   }
 };
 

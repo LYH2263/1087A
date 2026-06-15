@@ -190,6 +190,27 @@ async function loadMember(page = 1) {
   safeRender();
 }
 
+async function loadWallet(page = 1) {
+  if (!state.user) return;
+  state.wallet.loading = true;
+  safeRender();
+  const data = await api.getWalletTransactions({ page, pageSize: state.wallet.transactions.pageSize });
+  state.wallet.balance = data.balance;
+  state.wallet.balanceCents = data.balanceCents;
+  state.wallet.transactions = {
+    list: data.transactions,
+    total: data.total,
+    page: data.page,
+    pageSize: data.pageSize,
+    totalIncome: data.totalIncome,
+    totalIncomeCents: data.totalIncomeCents,
+    totalExpense: data.totalExpense,
+    totalExpenseCents: data.totalExpenseCents
+  };
+  state.wallet.loading = false;
+  safeRender();
+}
+
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
@@ -272,12 +293,17 @@ const viewLoaders = {
     await loadWishlist();
   },
   cart: async () => {
-    await loadCart();
-    await loadAddresses();
+    await Promise.all([loadCart(), loadAddresses()]);
+    try {
+      const balanceData = await api.getWalletBalance();
+      state.wallet.balance = balanceData.balance;
+      state.wallet.balanceCents = balanceData.balanceCents;
+    } catch (e) {}
   },
   wishlist: loadWishlist,
   orders: loadOrders,
   member: () => loadMember(1),
+  wallet: () => loadWallet(1),
   notifications: () => loadNotifications(1),
   profile: loadAddresses,
   admin: loadAdmin
@@ -416,7 +442,8 @@ bindEventHandlers({
   openForgotModal,
   openResetModal,
   escapeHtmlAttr,
-  loadMember
+  loadMember,
+  loadWallet
 });
 
 let unreadPollInterval = null;

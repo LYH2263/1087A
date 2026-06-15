@@ -21,6 +21,7 @@ const couponRoutes = require('./routes/coupons');
 const afterSaleRoutes = require('./routes/afterSales');
 const notificationRoutes = require('./routes/notifications');
 const memberRoutes = require('./routes/member');
+const walletRoutes = require('./routes/wallet');
 
 const app = express();
 const fs = require('fs');
@@ -60,6 +61,7 @@ app.use('/api/coupons', requireAuth, couponRoutes);
 app.use('/api/after-sales', requireAuth, afterSaleRoutes);
 app.use('/api/notifications', requireAuth, notificationRoutes);
 app.use('/api/member', requireAuth, memberRoutes);
+app.use('/api/wallet', requireAuth, walletRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'NOT_FOUND' });
