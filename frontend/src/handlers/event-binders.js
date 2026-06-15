@@ -157,10 +157,124 @@ export function bindEventHandlers({
   loadCoupons,
   loadMyCoupons,
   loadApplicableCoupons,
-  calculateCoupon
+  calculateCoupon,
+  loadAfterSales
 }) {
   function formatCurrency(value) {
     return `¥${Number(value).toFixed(2)}`;
+  }
+
+  function openAfterSaleModal(orderId) {
+    const order = state.orders.find(o => o.id === orderId);
+    if (!order) {
+      showToast('订单不存在', 'error');
+      return;
+    }
+
+    const hasReturnable = order.items.some(it => (it.quantity - (it.returnedQuantity || 0)) > 0);
+    if (!hasReturnable) {
+      showToast('该订单没有可退换的商品', 'error');
+      return;
+    }
+
+    const itemRows = order.items.map(item => {
+      const available = item.quantity - (item.returnedQuantity || 0);
+      const disabled = available <= 0;
+      const price = (item.priceCents !== undefined ? item.priceCents / 100 : item.price);
+      return `
+        <div class="border border-slate-200 rounded-xl p-3 space-y-2 ${disabled ? 'opacity-50 bg-slate-50' : ''}">
+          <div class="flex items-start gap-3">
+            <input type="checkbox" name="selected_${item.id}" value="1" class="mt-1 w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" ${disabled ? 'disabled' : ''} />
+            <img src="${item.coverUrl}" alt="${item.title}" class="w-14 h-14 rounded-lg object-contain bg-white" />
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-sm">${item.title}</p>
+              <p class="text-xs text-slate-500">${item.author}${item.specName ? ' · ' + item.specName : ''}</p>
+              <p class="text-xs text-slate-500 mt-1">单价：${formatCurrency(price)} · 可退数量：<span class="${available > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}">${available} / ${item.quantity}</span>${item.returnedQuantity > 0 ? '（已退 ' + item.returnedQuantity + ' 本）' : ''}</p>
+            </div>
+          </div>
+          <div class="pl-7">
+            <label class="text-xs text-slate-500">退货数量</label>
+            <input type="number" name="qty_${item.id}" min="0" max="${available}" value="${disabled ? 0 : 1}" class="input mt-1 !py-1.5" ${disabled ? 'disabled' : ''} />
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const reasonOptions = [
+      { v: 'QUALITY_ISSUE', label: '质量问题' },
+      { v: 'WRONG_ITEM', label: '发错商品' },
+      { v: 'DAMAGED', label: '商品损坏' },
+      { v: 'NOT_AS_DESCRIBED', label: '与描述不符' },
+      { v: 'NO_LONGER_WANTED', label: '不想要了' },
+      { v: 'OTHER', label: '其他原因' }
+    ].map(r => `<label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50"><input type="radio" name="reason" value="${r.v}" ${r.v === 'OTHER' ? '' : ''} class="w-4 h-4 text-teal-600 focus:ring-teal-500" /><span class="text-sm">${r.label}</span></label>`).join('');
+
+    openModal(`
+      <div class="space-y-5">
+        <div>
+          <h3 class="text-lg font-semibold">申请退换货</h3>
+          <p class="text-sm text-slate-500 mt-1">订单号：${orderId}</p>
+        </div>
+        <form data-form="create-aftersale" data-order-id="${orderId}" novalidate>
+          <div class="space-y-3">
+            <h4 class="font-medium text-sm text-slate-700">选择退换商品</h4>
+            ${itemRows}
+          </div>
+          <div class="space-y-3 mt-5">
+            <h4 class="font-medium text-sm text-slate-700">选择售后类型</h4>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center gap-2 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="type" value="RETURN" checked class="w-4 h-4 text-teal-600 focus:ring-teal-500" />
+                <div>
+                  <p class="font-medium text-sm">退货退款</p>
+                  <p class="text-xs text-slate-500">退回商品，退款至账户</p>
+                </div>
+              </label>
+              <label class="flex items-center gap-2 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="type" value="EXCHANGE" class="w-4 h-4 text-teal-600 focus:ring-teal-500" />
+                <div>
+                  <p class="font-medium text-sm">换货</p>
+                  <p class="text-xs text-slate-500">退回商品，重新发货</p>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div class="space-y-3 mt-5" data-error-group="reason">
+            <h4 class="font-medium text-sm text-slate-700">申请原因</h4>
+            <div class="grid md:grid-cols-2 gap-1">
+              ${reasonOptions}
+            </div>
+          </div>
+          <div class="space-y-2 mt-5">
+            <label class="text-sm font-medium text-slate-700">详细说明（选填，最多500字）</label>
+            <textarea class="input" name="description" rows="3" maxlength="500" placeholder="请描述具体的问题..."></textarea>
+          </div>
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+            <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+            <button type="submit" class="btn-primary">提交申请</button>
+          </div>
+        </form>
+      </div>
+    `);
+  }
+
+  function openRejectModal(afterSaleId) {
+    openModal(`
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold">驳回售后申请</h3>
+        <p class="text-sm text-slate-500">售后单号：${afterSaleId}</p>
+        <form data-form="reject-aftersale" data-id="${afterSaleId}" novalidate>
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-slate-700">驳回原因（必填，1-500字）</label>
+            <textarea class="input" name="rejectReason" rows="4" maxlength="500" required placeholder="请说明驳回的具体原因..."></textarea>
+          </div>
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+            <button type="button" class="btn-outline" data-action="close-modal">取消</button>
+            <button type="submit" class="btn-primary !bg-red-600 hover:!bg-red-700">确认驳回</button>
+          </div>
+        </form>
+      </div>
+    `);
   }
 
   async function loadStockWarnings() {
@@ -554,6 +668,56 @@ export function bindEventHandlers({
       await loadAdmin();
       safeRender();
       showToast('目标已更新', 'success');
+    },
+    'create-aftersale': async (form) => {
+      const orderId = form.dataset.orderId;
+      const data = getFormData(form);
+
+      const items = [];
+      const order = state.orders.find(o => o.id === orderId);
+      if (order) {
+        for (const item of order.items) {
+          const selected = data[`selected_${item.id}`] === '1';
+          const qty = parseInt(data[`qty_${item.id}`], 10) || 0;
+          if (selected && qty > 0) {
+            items.push({ orderItemId: item.id, quantity: qty });
+          }
+        }
+      }
+
+      if (items.length === 0) {
+        throw new Error('请至少选择一件退换商品并填写数量');
+      }
+      if (!data.reason) {
+        throw new Error('请选择申请原因');
+      }
+
+      const payload = {
+        orderId,
+        type: data.type || 'RETURN',
+        reason: data.reason,
+        description: data.description || undefined,
+        items
+      };
+
+      await api.createAfterSale(payload);
+      closeModal();
+      await Promise.all([loadOrders(), loadAfterSales()]);
+      safeRender();
+      showToast('售后申请已提交，请等待审核', 'success');
+    },
+    'reject-aftersale': async (form) => {
+      const id = form.dataset.id;
+      const data = getFormData(form);
+      if (!data.rejectReason || data.rejectReason.trim().length === 0) {
+        throw new Error('请填写驳回原因');
+      }
+
+      await api.admin.rejectAfterSale(id, { rejectReason: data.rejectReason.trim() });
+      closeModal();
+      await loadAdmin();
+      safeRender();
+      showToast('已驳回售后申请', 'success');
     }
   };
 
@@ -839,6 +1003,10 @@ export function bindEventHandlers({
         </div>
       `);
     },
+    'open-aftersale': async (target) => {
+      const orderId = target.dataset.id;
+      openAfterSaleModal(orderId);
+    },
     'set-default': async (target) => {
       await api.setDefaultAddress(target.dataset.id);
       await loadAddresses();
@@ -979,6 +1147,30 @@ export function bindEventHandlers({
       await api.admin.refundOrder(target.dataset.id);
       await loadAdmin();
       safeRender();
+    },
+    'admin-approve-aftersale': async (target) => {
+      const id = target.dataset.id;
+      if (!confirm('确定要通过这个售后申请吗？通过后将回补库存并更新订单状态。')) {
+        return;
+      }
+      await api.admin.approveAfterSale(id);
+      await Promise.all([loadAdmin(), loadOrders()]);
+      safeRender();
+      showToast('售后申请已通过', 'success');
+    },
+    'admin-reject-aftersale': async (target) => {
+      const id = target.dataset.id;
+      openRejectModal(id);
+    },
+    'admin-complete-aftersale': async (target) => {
+      const id = target.dataset.id;
+      if (!confirm('确定要标记此售后为完成吗？')) {
+        return;
+      }
+      await api.admin.completeAfterSale(id);
+      await Promise.all([loadAdmin(), loadOrders()]);
+      safeRender();
+      showToast('售后已完成', 'success');
     },
     'export-orders': async () => {
       const response = await api.admin.exportOrders();
@@ -1335,6 +1527,14 @@ export function bindEventHandlers({
     },
     'toggle-price-drop-filter': async (target) => {
       state.wishlistFilter.onlyPriceDrop = target.checked;
+      safeRender();
+    },
+    'filter-aftersale-status': async (target) => {
+      state.admin.afterSaleFilters.status = target.value || '';
+      safeRender();
+    },
+    'filter-aftersale-type': async (target) => {
+      state.admin.afterSaleFilters.type = target.value || '';
       safeRender();
     }
   };

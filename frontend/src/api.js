@@ -444,6 +444,26 @@ export const api = {
     },
     getGoalsOverview() {
       return request('/admin/goals/stats/overview');
+    },
+    getAfterSales(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      return request(`/admin/after-sales${query ? `?${query}` : ''}`);
+    },
+    getAfterSale(id) {
+      return request(`/admin/after-sales/${id}`);
+    },
+    approveAfterSale(id) {
+      return request(`/admin/after-sales/${id}/approve`, { method: 'POST' });
+    },
+    rejectAfterSale(id, payload) {
+      return request(`/admin/after-sales/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    completeAfterSale(id) {
+      return request(`/admin/after-sales/${id}/complete`, { method: 'POST' });
     }
   },
   getNotifications(params = {}) {
@@ -494,5 +514,18 @@ export const api = {
   getWalletTransactions(params = {}) {
     const query = new URLSearchParams(params).toString();
     return request(`/wallet/transactions${query ? `?${query}` : ''}`);
+  },
+  getAfterSales() {
+    return request('/after-sales');
+  },
+  createAfterSale(payload) {
+    return request('/after-sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  },
+  getAfterSaleDetail(id) {
+    return request(`/after-sales/${id}`);
   }
 };

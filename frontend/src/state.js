@@ -25,6 +25,7 @@ export const state = {
     onlyPriceDrop: false
   },
   orders: [],
+  afterSales: [],
   addresses: [],
   loading: {
     books: false,
@@ -61,7 +62,10 @@ export const state = {
     goalsOverview: null,
     editingGoal: null,
     goalYear: null,
-    goalMonth: null
+    goalMonth: null,
+    afterSales: [],
+    afterSaleTab: 'all',
+    afterSaleFilters: { status: '', type: '' }
   },
   profile: {
     editingAddress: null

@@ -58,6 +58,13 @@ const toastMap = [
   [/coupon_concurrent_use/i, '优惠券已被其他订单使用'],
   [/min_amount_not_reached/i, '未达到优惠券使用门槛'],
   [/user_coupon_not_found/i, '未找到该优惠券'],
+  [/aftersale_already_exists/i, '该订单已有正在处理的售后申请，请等待审核完成后再提交'],
+  [/exceed_returnable_quantity/i, '申请的退货数量超过了可退货数量上限'],
+  [/item_already_returned/i, '该商品已全部退货，无法再次申请'],
+  [/order_not_eligible_for_aftersale/i, '当前订单状态不支持申请退换货'],
+  [/aftersale_not_pending/i, '该售后单当前状态无法执行此操作'],
+  [/aftersale_not_found/i, '售后单不存在'],
+  [/no_returnable_items/i, '请选择要退换的商品和数量'],
   [/internal server error/i, '服务器开小差了，请稍后再试']
 ];
 
@@ -172,6 +179,11 @@ async function loadOrders() {
   state.orders = await api.getOrders();
 }
 
+async function loadAfterSales() {
+  if (!state.user) return;
+  state.afterSales = await api.getAfterSales();
+}
+
 async function loadAddresses() {
   if (!state.user) return;
   state.addresses = await api.getAddresses();
@@ -224,7 +236,7 @@ async function loadWallet(page = 1) {
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
-  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview, coupons] = await Promise.all([
+  const [books, categories, orders, stats, stockThreshold, stockWarnings, restockLogs, goalsOverview, coupons, afterSales] = await Promise.all([
     api.admin.getBooks(),
     api.admin.getCategories(),
     api.admin.getOrders(),
@@ -233,7 +245,8 @@ async function loadAdmin() {
     api.admin.getStockWarnings(),
     api.admin.getRestockLogs({ page: 1, pageSize: 20 }),
     api.admin.getGoalsOverview(),
-    api.admin.getCoupons()
+    api.admin.getCoupons(),
+    api.admin.getAfterSales()
   ]);
   state.admin.books = books;
   state.admin.categories = categories;
@@ -246,6 +259,7 @@ async function loadAdmin() {
   state.admin.restockLogStats = { total: restockLogs.total, page: restockLogs.page, pageSize: restockLogs.pageSize };
   state.admin.goalsOverview = goalsOverview;
   state.admin.coupons = coupons;
+  state.admin.afterSales = afterSales;
   state.loading.admin = false;
 }
 
@@ -354,7 +368,11 @@ const viewLoaders = {
     } catch (e) {}
   },
   wishlist: loadWishlist,
-  orders: loadOrders,
+  orders: async () => {
+    await loadOrders();
+    await loadAfterSales();
+  },
+  'after-sales': loadAfterSales,
   member: () => loadMember(1),
   wallet: () => loadWallet(1),
   notifications: () => loadNotifications(1),
@@ -502,7 +520,8 @@ bindEventHandlers({
   loadCoupons,
   loadMyCoupons,
   loadApplicableCoupons,
-  calculateCoupon
+  calculateCoupon,
+  loadAfterSales
 });
 
 let unreadPollInterval = null;

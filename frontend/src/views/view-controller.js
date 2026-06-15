@@ -23,7 +23,9 @@ export function createViewController({
       SHIPPED: '已发货',
       COMPLETED: '已完成',
       CANCELED: '已取消',
-      REFUNDED: '已退款'
+      REFUNDED: '已退款',
+      RETURNING: '退货中',
+      RETURNED: '已退货'
     };
     return map[status] || status;
   }
@@ -668,7 +670,7 @@ export function createViewController({
                 <img src="${item.coverUrl}" alt="${item.title}" class="w-16 h-16 rounded-lg object-contain bg-white" />
                 <div class="flex-1">
                   <p class="font-medium">${item.title}</p>
-                  <p class="text-xs text-slate-500">${item.author}${item.specName ? ' · ' + item.specName : ''} · ${item.quantity} 本</p>
+                  <p class="text-xs text-slate-500">${item.author}${item.specName ? ' · ' + item.specName : ''} · 数量 ${item.quantity}${item.returnedQuantity > 0 ? `<span class="text-orange-600"> · 已退 ${item.returnedQuantity} 本</span>` : ''}</p>
                 </div>
                 <p class="text-sm font-semibold">${formatCurrency(item.price)}</p>
               </div>
@@ -680,12 +682,125 @@ export function createViewController({
             ${order.status === 'PENDING_PAYMENT' ? `<button class="btn-primary" data-action="pay-order" data-id="${order.id}">立即支付（模拟）</button>` : ''}
             ${order.status === 'PENDING_PAYMENT' ? `<button class="btn-outline" data-action="cancel-order" data-id="${order.id}">取消订单</button>` : ''}
             ${order.status === 'SHIPPED' ? `<button class="btn-primary" data-action="confirm-order" data-id="${order.id}" data-points="${estimatedPoints}">确认收货（+${estimatedPoints}积分）</button>` : ''}
+            ${['PAID', 'SHIPPED', 'COMPLETED'].includes(order.status) ? `<button class="btn-outline" data-action="open-aftersale" data-id="${order.id}">申请退换货</button>` : ''}
             ${order.status === 'COMPLETED' && !order.reviewText ? `<button class="btn-outline" data-action="review-order" data-id="${order.id}">评价订单</button>` : ''}
             ${order.reviewText ? `<span class="badge">已评价 ${order.rating}⭐</span>` : ''}
           </div>
         </div>
       `;
         }
+      )
+      .join('');
+  }
+
+  function formatAfterSaleStatus(status) {
+    const map = {
+      PENDING: '待审核',
+      APPROVED: '已通过',
+      PROCESSING: '处理中',
+      COMPLETED: '已完成',
+      REJECTED: '已驳回'
+    };
+    return map[status] || status;
+  }
+
+  function formatAfterSaleReason(reason) {
+    const map = {
+      QUALITY_ISSUE: '质量问题',
+      WRONG_ITEM: '发错商品',
+      DAMAGED: '商品损坏',
+      NOT_AS_DESCRIBED: '与描述不符',
+      NO_LONGER_WANTED: '不想要了',
+      OTHER: '其他原因'
+    };
+    return map[reason] || reason;
+  }
+
+  function afterSaleStatusBadge(status) {
+    const classMap = {
+      PENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+      APPROVED: 'bg-sky-100 text-sky-700 border-sky-200',
+      PROCESSING: 'bg-blue-100 text-blue-700 border-blue-200',
+      COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      REJECTED: 'bg-red-100 text-red-700 border-red-200'
+    };
+    return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${classMap[status] || ''}">${formatAfterSaleStatus(status)}</span>`;
+  }
+
+  function renderAfterSales() {
+    viewTitle.innerHTML = `
+      <div>
+        <h2 class="text-xl font-semibold">我的售后</h2>
+        <p class="text-sm text-slate-500">查看退换货申请与处理进度</p>
+      </div>
+    `;
+
+    if (!state.user) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">请先登录后查看售后记录。</div>`;
+      return;
+    }
+
+    if (state.afterSales.length === 0) {
+      viewContent.innerHTML = `<div class="card p-6 text-slate-500">暂无售后申请</div>`;
+      return;
+    }
+
+    viewContent.innerHTML = state.afterSales
+      .map(
+        (as) => `
+      <div class="card p-6 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="text-xs text-slate-400">售后单号 ${as.id}</p>
+            <div class="flex items-center gap-2 mt-1">
+              ${afterSaleStatusBadge(as.status)}
+              <span class="text-xs text-slate-500">关联订单：${as.orderId}</span>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="text-sm text-slate-500">申请退款金额</p>
+            <p class="text-lg font-semibold">${formatCurrency((as.totalAmountCents || 0) / 100)}</p>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-3 gap-3 text-sm">
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-xs text-slate-400">申请原因</p>
+            <p class="font-medium mt-0.5">${formatAfterSaleReason(as.reason)}</p>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3 md:col-span-2">
+            <p class="text-xs text-slate-400">说明</p>
+            <p class="mt-0.5">${as.description || '—'}</p>
+          </div>
+        </div>
+        <div class="space-y-2 border-t border-slate-100 pt-3">
+          <p class="text-xs text-slate-400">申请退换商品</p>
+          ${as.items.map(item => `
+            <div class="flex items-center gap-3">
+              <img src="${item.coverUrl}" alt="${item.title}" class="w-12 h-12 rounded-lg object-contain bg-white" />
+              <div class="flex-1">
+                <p class="font-medium text-sm">${item.title}</p>
+                <p class="text-xs text-slate-500">${item.author} · 申请数量 ${item.quantity} 本 · ${formatCurrency((item.priceCents || 0) / 100)}/本</p>
+              </div>
+              <p class="text-sm font-semibold">${formatCurrency(((item.priceCents || 0) * (item.quantity || 0)) / 100)}</p>
+            </div>
+          `).join('')}
+        </div>
+        ${as.status === 'REJECTED' ? `
+          <div class="bg-red-50 border border-red-100 rounded-lg p-3 text-sm">
+            <p class="text-red-700 font-medium">驳回原因</p>
+            <p class="text-red-600 mt-1">${as.rejectReason || '—'}</p>
+            <p class="text-xs text-red-500 mt-1">驳回时间：${as.reviewedAt ? new Date(as.reviewedAt).toLocaleString() : '—'}</p>
+          </div>
+        ` : as.reviewedAt ? `
+          <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-sm">
+            <p class="text-emerald-700">审核时间：${new Date(as.reviewedAt).toLocaleString()}</p>
+          </div>
+        ` : ''}
+        <div class="text-xs text-slate-400">
+          提交时间：${new Date(as.createdAt).toLocaleString()}
+        </div>
+      </div>
+    `
       )
       .join('');
   }
@@ -800,6 +915,7 @@ export function createViewController({
         <button class="btn-outline" data-action="admin-tab" data-tab="stock">库存预警</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="restock-logs">补货流水</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="goals">目标管理</button>
+        <button class="btn-outline" data-action="admin-tab" data-tab="after-sales">售后工单</button>
       </div>
     `;
 
@@ -1450,6 +1566,151 @@ export function createViewController({
       }
     }
 
+    if (state.admin.tab === 'after-sales') {
+      const statusFilter = state.admin.afterSaleFilters.status;
+      const typeFilter = state.admin.afterSaleFilters.type;
+
+      let list = state.admin.afterSales || [];
+      if (statusFilter) list = list.filter(a => a.status === statusFilter);
+      if (typeFilter) list = list.filter(a => a.type === typeFilter);
+
+      const stats = {
+        total: (state.admin.afterSales || []).length,
+        pending: (state.admin.afterSales || []).filter(a => a.status === 'PENDING').length,
+        processing: (state.admin.afterSales || []).filter(a => a.status === 'PROCESSING').length,
+        completed: (state.admin.afterSales || []).filter(a => a.status === 'COMPLETED').length,
+        rejected: (state.admin.afterSales || []).filter(a => a.status === 'REJECTED').length
+      };
+
+      const statCards = `
+        <div class="grid md:grid-cols-5 gap-3">
+          <div class="card p-4">
+            <p class="text-xs text-slate-400">全部工单</p>
+            <p class="text-2xl font-bold mt-1">${stats.total}</p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs text-amber-500">待审核</p>
+            <p class="text-2xl font-bold mt-1 text-amber-600">${stats.pending}</p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs text-blue-500">处理中</p>
+            <p class="text-2xl font-bold mt-1 text-blue-600">${stats.processing}</p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs text-emerald-500">已完成</p>
+            <p class="text-2xl font-bold mt-1 text-emerald-600">${stats.completed}</p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs text-red-500">已驳回</p>
+            <p class="text-2xl font-bold mt-1 text-red-600">${stats.rejected}</p>
+          </div>
+        </div>
+      `;
+
+      const filterBar = `
+        <div class="card p-4">
+          <div class="flex flex-wrap gap-3 items-center">
+            <label class="flex items-center gap-2 text-sm text-slate-600">
+              状态：
+              <select class="input !py-1.5" data-action="filter-aftersale-status">
+                <option value="">全部</option>
+                <option value="PENDING" ${statusFilter === 'PENDING' ? 'selected' : ''}>待审核</option>
+                <option value="PROCESSING" ${statusFilter === 'PROCESSING' ? 'selected' : ''}>处理中</option>
+                <option value="COMPLETED" ${statusFilter === 'COMPLETED' ? 'selected' : ''}>已完成</option>
+                <option value="REJECTED" ${statusFilter === 'REJECTED' ? 'selected' : ''}>已驳回</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-2 text-sm text-slate-600">
+              类型：
+              <select class="input !py-1.5" data-action="filter-aftersale-type">
+                <option value="">全部</option>
+                <option value="RETURN" ${typeFilter === 'RETURN' ? 'selected' : ''}>退货</option>
+                <option value="EXCHANGE" ${typeFilter === 'EXCHANGE' ? 'selected' : ''}>换货</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      `;
+
+      let tableContent = '';
+      if (list.length === 0) {
+        tableContent = `<div class="card p-6 text-slate-500 text-center">暂无售后工单</div>`;
+      } else {
+        tableContent = `
+          <div class="card p-0 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left p-3 font-semibold text-slate-600">售后单</th>
+                    <th class="text-left p-3 font-semibold text-slate-600">关联订单/用户</th>
+                    <th class="text-left p-3 font-semibold text-slate-600">状态</th>
+                    <th class="text-left p-3 font-semibold text-slate-600">原因</th>
+                    <th class="text-right p-3 font-semibold text-slate-600">金额</th>
+                    <th class="text-left p-3 font-semibold text-slate-600">商品</th>
+                    <th class="text-right p-3 font-semibold text-slate-600">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${list.map(as => `
+                    <tr class="border-b border-slate-100 hover:bg-slate-50/50 align-top">
+                      <td class="p-3">
+                        <p class="font-mono text-xs text-slate-500">${as.id}</p>
+                        <p class="text-xs text-slate-400 mt-1">${new Date(as.createdAt).toLocaleString()}</p>
+                      </td>
+                      <td class="p-3">
+                        <p class="text-xs font-mono text-slate-500">订单：${as.orderId}</p>
+                        <p class="text-xs text-slate-500 mt-0.5">用户：${as.user?.username || '—'}${as.user?.email ? ' · ' + as.user.email : ''}</p>
+                      </td>
+                      <td class="p-3">${afterSaleStatusBadge(as.status)}</td>
+                      <td class="p-3">
+                        <p class="font-medium">${formatAfterSaleReason(as.reason)}</p>
+                        ${as.description ? `<p class="text-xs text-slate-500 mt-1">${as.description.length > 40 ? as.description.slice(0, 40) + '...' : as.description}</p>` : ''}
+                        ${as.rejectReason ? `<p class="text-xs text-red-600 mt-1">驳回：${as.rejectReason.length > 40 ? as.rejectReason.slice(0, 40) + '...' : as.rejectReason}</p>` : ''}
+                      </td>
+                      <td class="p-3 text-right font-semibold">${formatCurrency((as.totalAmountCents || 0) / 100)}</td>
+                      <td class="p-3 max-w-xs">
+                        <div class="space-y-1">
+                          ${(as.items || []).slice(0, 2).map(it => `
+                            <div class="flex items-center gap-2">
+                              <img src="${it.coverUrl}" class="w-8 h-8 rounded object-contain bg-white" alt="" />
+                              <div class="flex-1 min-w-0">
+                                <p class="text-xs truncate font-medium">${it.title}</p>
+                                <p class="text-xs text-slate-500">x${it.quantity}</p>
+                              </div>
+                            </div>
+                          `).join('')}
+                          ${(as.items || []).length > 2 ? `<p class="text-xs text-slate-400">等 ${as.items.length} 件商品</p>` : ''}
+                        </div>
+                      </td>
+                      <td class="p-3 text-right">
+                        <div class="flex flex-wrap justify-end gap-1.5">
+                          ${as.status === 'PENDING' ? `
+                            <button class="btn-primary !py-1 !px-2 text-xs" data-action="admin-approve-aftersale" data-id="${as.id}">通过</button>
+                            <button class="btn-outline !py-1 !px-2 text-xs text-red-600 border-red-200 hover:border-red-400" data-action="admin-reject-aftersale" data-id="${as.id}">驳回</button>
+                          ` : as.status === 'PROCESSING' ? `
+                            <button class="btn-outline !py-1 !px-2 text-xs" data-action="admin-complete-aftersale" data-id="${as.id}">完成</button>
+                          ` : `
+                            <span class="text-xs text-slate-400">—</span>
+                          `}
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      content = `
+        ${statCards}
+        ${filterBar}
+        ${tableContent}
+      `;
+    }
+
     viewContent.innerHTML = `${adminTabs}${content}`;
   }
 
@@ -1930,6 +2191,7 @@ export function createViewController({
     cart: renderCart,
     wishlist: renderWishlist,
     orders: renderOrders,
+    'after-sales': renderAfterSales,
     member: renderMember,
     wallet: renderWallet,
     notifications: renderNotifications,
