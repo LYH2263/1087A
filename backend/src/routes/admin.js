@@ -472,8 +472,6 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'ORDER_NOT_REFUNDABLE');
   }
 
-  const refundedPoints = calculateEarnedPoints(order.totalCents);
-
   const updated = await prisma.$transaction(async (tx) => {
     if (order.paymentMethod === 'BALANCE') {
       await refundBalance({
@@ -527,7 +525,12 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
       }
     }
 
-    if (refundedPoints > 0) {
+    let refundedPoints = 0;
+    const earnLog = await tx.pointLog.findUnique({
+      where: { orderId_source: { orderId: order.id, source: 'ORDER_EARN' } }
+    });
+
+    if (earnLog && earnLog.points > 0) {
       const profile = await tx.memberProfile.findUnique({
         where: { userId: order.userId },
         select: { id: true, totalPoints: true, availablePoints: true, totalSpentCents: true }
@@ -539,6 +542,7 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
         });
 
         if (!existingRefundLog) {
+          refundedPoints = earnLog.points;
           const balanceBefore = profile.totalPoints;
           const balanceAfter = Math.max(0, balanceBefore - refundedPoints);
           const newLevel = calculateLevelByPoints(balanceAfter);
@@ -1285,7 +1289,7 @@ router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'AFTERSALE_NOT_PROCESSING', { currentStatus: afterSale.status });
   }
 
-  const refundedPoints = calculateEarnedPoints(afterSale.totalAmountCents);
+  let refundedPoints = 0;
 
   await prisma.$transaction(async (tx) => {
     if (afterSale.type === 'RETURN' && afterSale.order.paymentMethod === 'BALANCE') {
@@ -1307,47 +1311,57 @@ router.post('/after-sales/:id/complete', asyncHandler(async (req, res) => {
       }
     });
 
-    if (afterSale.type === 'RETURN' && refundedPoints > 0) {
-      const profile = await tx.memberProfile.findUnique({
-        where: { userId: afterSale.userId },
-        select: { id: true, totalPoints: true, availablePoints: true, totalSpentCents: true }
+    if (afterSale.type === 'RETURN') {
+      const earnLog = await tx.pointLog.findUnique({
+        where: { orderId_source: { orderId: afterSale.orderId, source: 'ORDER_EARN' } }
       });
 
-      if (profile) {
-        const existingRefundLog = await tx.pointLog.findUnique({
-          where: { afterSaleId_source: { afterSaleId: afterSale.id, source: 'AFTER_SALE_REFUND' } }
+      if (earnLog && earnLog.points > 0) {
+        const profile = await tx.memberProfile.findUnique({
+          where: { userId: afterSale.userId },
+          select: { id: true, totalPoints: true, availablePoints: true, totalSpentCents: true }
         });
 
-        if (!existingRefundLog) {
-          const balanceBefore = profile.totalPoints;
-          const balanceAfter = Math.max(0, balanceBefore - refundedPoints);
-          const newLevel = calculateLevelByPoints(balanceAfter);
-          const availableDeduct = Math.min(profile.availablePoints, refundedPoints);
-          const spentDeduct = Math.min(profile.totalSpentCents, afterSale.totalAmountCents);
-
-          await tx.pointLog.create({
-            data: {
-              userId: afterSale.userId,
-              profileId: profile.id,
-              source: 'AFTER_SALE_REFUND',
-              points: -refundedPoints,
-              balanceBefore,
-              balanceAfter,
-              afterSaleId: afterSale.id,
-              orderId: afterSale.orderId,
-              remark: `售后退款完成，扣回${refundedPoints}积分`
-            }
+        if (profile) {
+          const existingRefundLog = await tx.pointLog.findUnique({
+            where: { afterSaleId_source: { afterSaleId: afterSale.id, source: 'AFTER_SALE_REFUND' } }
           });
 
-          await tx.memberProfile.update({
-            where: { id: profile.id },
-            data: {
-              totalPoints: balanceAfter,
-              availablePoints: { decrement: availableDeduct },
-              totalSpentCents: { decrement: spentDeduct },
-              level: newLevel
-            }
-          });
+          if (!existingRefundLog) {
+            const orderTotalCents = afterSale.order.totalCents || 1;
+            refundedPoints = Math.floor(earnLog.points * (afterSale.totalAmountCents / orderTotalCents));
+            if (refundedPoints <= 0) return;
+
+            const balanceBefore = profile.totalPoints;
+            const balanceAfter = Math.max(0, balanceBefore - refundedPoints);
+            const newLevel = calculateLevelByPoints(balanceAfter);
+            const availableDeduct = Math.min(profile.availablePoints, refundedPoints);
+            const spentDeduct = Math.min(profile.totalSpentCents, afterSale.totalAmountCents);
+
+            await tx.pointLog.create({
+              data: {
+                userId: afterSale.userId,
+                profileId: profile.id,
+                source: 'AFTER_SALE_REFUND',
+                points: -refundedPoints,
+                balanceBefore,
+                balanceAfter,
+                afterSaleId: afterSale.id,
+                orderId: afterSale.orderId,
+                remark: `售后退款完成，扣回${refundedPoints}积分`
+              }
+            });
+
+            await tx.memberProfile.update({
+              where: { id: profile.id },
+              data: {
+                totalPoints: balanceAfter,
+                availablePoints: { decrement: availableDeduct },
+                totalSpentCents: { decrement: spentDeduct },
+                level: newLevel
+              }
+            });
+          }
         }
       }
     }
