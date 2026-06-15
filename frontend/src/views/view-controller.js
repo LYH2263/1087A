@@ -823,6 +823,7 @@ export function createViewController({
             const threshold = bookThresholdMap.get(book.id) ?? globalThreshold;
             const isLowStock = book.stock < threshold;
             const isZeroStock = book.stock === 0;
+            const specsData = book.hasSpecs && book.specs ? encodeURIComponent(JSON.stringify(book.specs)) : '';
             return `
         <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-3 hover-card ${isZeroStock ? 'border-red-300 bg-red-50' : isLowStock ? 'border-amber-300 bg-amber-50' : ''}">
           <div class="flex justify-between">
@@ -841,11 +842,29 @@ export function createViewController({
             <span>分类：${book.category?.name || '-'}</span>
             ${book.hasSpecs ? `<span class="text-teal-700 font-semibold">${book.specs.length} 个规格</span>` : ''}
           </div>
+          ${book.hasSpecs && book.specs && book.specs.length > 0 ? `
+          <div class="text-xs text-slate-500 space-y-1 pl-2 border-l-2 border-slate-200">
+            ${book.specs.map(s => `
+              <div class="flex gap-2">
+                <span>${s.name}：</span>
+                <span class="${s.stock < threshold ? 'text-amber-600 font-semibold' : ''}">${s.stock} 本</span>
+                <span>(${formatCurrency(s.price)})</span>
+                ${s.stock === 0 ? '<span class="text-red-600 font-semibold">缺货</span>' : s.stock < threshold ? '<span class="text-amber-600">低库存</span>' : ''}
+              </div>
+            `).join('')}
+          </div>
+          ` : ''}
           <div class="flex flex-wrap gap-2">
             <button class="btn-outline" data-action="edit-book" data-id="${book.id}">编辑</button>
             ${book.hasSpecs ? `<button class="btn-outline" data-action="manage-specs" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">管理规格</button>` : `<button class="btn-outline" data-action="manage-specs" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">添加规格</button>`}
             <button class="btn-outline" data-action="set-book-threshold" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-current="${bookThresholdMap.get(book.id) ?? ''}">设置阈值</button>
-            ${isLowStock ? `<button class="btn-primary" data-action="quick-restock" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}">补货</button>` : ''}
+            ${isLowStock ? `<button class="btn-primary" data-action="quick-restock" 
+              data-id="${book.id}" 
+              data-title="${escapeHtmlAttr(book.title)}"
+              data-has-specs="${book.hasSpecs ? 'true' : 'false'}"
+              data-specs="${specsData}"
+              data-threshold="${threshold}"
+            >补货</button>` : ''}
             ${book.status === 'ACTIVE'
               ? `<button class="btn-outline" data-action="deactivate-book" data-id="${book.id}">下架</button>`
               : `<button class="btn-outline" data-action="restore-book" data-id="${book.id}">上架</button>`}
@@ -1066,15 +1085,20 @@ export function createViewController({
       const warningRows = state.admin.stockWarnings
         .map(
           (book) => {
-            const isSelected = state.admin.selectedRestockBooks.has(book.id);
+            const selectKey = book.isSpecLevel ? `${book.id}:${book.specId}` : book.id;
+            const isSelected = state.admin.selectedRestockBooks.has(selectKey);
+            const displayStock = book.isSpecLevel ? book.specStock : book.stock;
             return `
         <div class="border ${book.isZeroStock ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'} rounded-xl p-4 flex flex-col gap-3 hover-card">
           <div class="flex items-start gap-3">
-            <input type="checkbox" class="mt-1" data-action="toggle-restock-select" data-id="${book.id}" ${isSelected ? 'checked' : ''} />
+            <input type="checkbox" class="mt-1" data-action="toggle-restock-select" data-key="${selectKey}" ${isSelected ? 'checked' : ''} />
             <div class="flex-1">
               <div class="flex justify-between items-start">
                 <div>
-                  <h4 class="font-semibold">${book.title}</h4>
+                  <h4 class="font-semibold">
+                    ${book.title}
+                    ${book.isSpecLevel ? `<span class="badge bg-slate-200 text-slate-700 ml-2">${book.specName}</span>` : ''}
+                  </h4>
                   <p class="text-sm text-slate-500">${book.author} · ${book.isbn}</p>
                 </div>
                 <div class="flex gap-2">
@@ -1083,13 +1107,22 @@ export function createViewController({
                 </div>
               </div>
               <div class="flex flex-wrap gap-3 mt-2 text-sm">
-                <span class="${book.isZeroStock ? 'text-red-600 font-semibold' : 'text-amber-600 font-semibold'}">当前库存：${book.stock}</span>
+                <span class="${book.isZeroStock ? 'text-red-600 font-semibold' : 'text-amber-600 font-semibold'}">当前库存：${displayStock}</span>
                 <span>预警阈值：${book.threshold}</span>
                 <span>分类：${book.category?.name || '-'}</span>
+                ${book.isSpecLevel && book.specPrice ? `<span>规格价格：${formatCurrency(book.specPrice)}</span>` : ''}
               </div>
               <div class="flex flex-wrap gap-2 mt-3">
                 <button class="btn-outline" data-action="set-book-threshold" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-current="${book.threshold}">调整阈值</button>
-                <button class="btn-primary" data-action="single-restock" data-id="${book.id}" data-title="${escapeHtmlAttr(book.title)}" data-stock="${book.stock}" data-threshold="${book.threshold}">单条补货</button>
+                <button class="btn-primary" data-action="single-restock" 
+                  data-id="${book.id}" 
+                  data-title="${escapeHtmlAttr(book.title)}" 
+                  data-stock="${displayStock}" 
+                  data-threshold="${book.threshold}"
+                  data-spec-id="${book.specId || ''}"
+                  data-spec-name="${escapeHtmlAttr(book.specName || '')}"
+                  data-has-specs="${book.hasSpecs ? 'true' : 'false'}"
+                >单条补货</button>
               </div>
             </div>
           </div>
@@ -1173,7 +1206,10 @@ export function createViewController({
         <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
           <div class="flex justify-between items-start">
             <div>
-              <h4 class="font-semibold">${log.bookTitle}</h4>
+              <h4 class="font-semibold">
+                ${log.bookTitle}
+                ${log.specName ? `<span class="badge bg-slate-200 text-slate-700 ml-2">${log.specName}</span>` : ''}
+              </h4>
               <p class="text-xs text-slate-500">操作时间：${new Date(log.createdAt).toLocaleString('zh-CN')}</p>
             </div>
             <span class="badge bg-emerald-500 text-white">+${log.quantity}</span>

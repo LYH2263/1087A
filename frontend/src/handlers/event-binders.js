@@ -201,20 +201,43 @@ export function bindEventHandlers({
     `);
   }
 
-  function openSingleRestockModal(bookId, bookTitle, currentStock, threshold) {
+  function openSingleRestockModal(bookId, bookTitle, currentStock, threshold, specId, specName, hasSpecs, specs) {
     const suggestedQty = Math.max(threshold - currentStock, 10);
+
+    let specSelectHtml = '';
+    if (hasSpecs && specs && specs.length > 0) {
+      const options = specs.map(s => {
+        const selected = (specId && s.id === specId) ? 'selected' : '';
+        return `<option value="${s.id}" data-stock="${s.stock}" ${selected}>${s.name}（当前库存：${s.stock}）</option>`;
+      }).join('');
+      specSelectHtml = `
+        <div class="space-y-2">
+          <label class="text-sm text-slate-600">选择规格</label>
+          <select class="input input-lg" name="specId" id="specSelect">
+            ${options}
+          </select>
+        </div>
+      `;
+    } else if (specName) {
+      specSelectHtml = `
+        <input type="hidden" name="specId" value="${specId}" />
+        <p class="text-sm text-slate-500">规格：<span class="font-semibold">${specName}</span></p>
+      `;
+    }
+
     openModal(`
       <div class="space-y-4">
         <h3 class="text-lg font-semibold">「${bookTitle}」补货</h3>
         <div class="bg-slate-50 rounded-lg p-3 space-y-1 text-sm">
-          <p>当前库存：<span class="font-semibold ${currentStock === 0 ? 'text-red-600' : 'text-amber-600'}">${currentStock} 本</span></p>
+          <p id="currentStockDisplay">当前库存：<span class="font-semibold ${currentStock === 0 ? 'text-red-600' : 'text-amber-600'}">${currentStock} 本</span></p>
           <p>预警阈值：<span class="font-semibold">${threshold} 本</span></p>
-          <p>建议补货：<span class="font-semibold text-emerald-600">${suggestedQty} 本（补足到阈值 + 10 本安全库存）</span></p>
+          <p>建议补货：<span class="font-semibold text-emerald-600" id="suggestedQtyDisplay">${suggestedQty} 本（补足到阈值 + 10 本安全库存）</span></p>
         </div>
-        <form data-form="single-restock" data-book-id="${bookId}" novalidate>
+        <form data-form="single-restock" data-book-id="${bookId}" data-threshold="${threshold}" novalidate>
+          ${specSelectHtml}
           <div class="space-y-2">
             <label class="text-sm text-slate-600">补货数量（本）</label>
-            <input class="input input-lg" name="quantity" type="number" min="1" value="${suggestedQty}" required placeholder="请输入补货数量" />
+            <input class="input input-lg" name="quantity" id="qtyInput" type="number" min="1" value="${suggestedQty}" required placeholder="请输入补货数量" />
           </div>
           <div class="flex justify-end gap-2 mt-4">
             <button type="button" class="btn-outline" data-action="close-modal">取消</button>
@@ -223,29 +246,67 @@ export function bindEventHandlers({
         </form>
       </div>
     `);
+
+    if (hasSpecs && specs && specs.length > 0) {
+      setTimeout(() => {
+        const specSelect = document.getElementById('specSelect');
+        const qtyInput = document.getElementById('qtyInput');
+        const stockDisplay = document.getElementById('currentStockDisplay');
+        const suggestedDisplay = document.getElementById('suggestedQtyDisplay');
+        if (specSelect && qtyInput && stockDisplay && suggestedDisplay) {
+          specSelect.addEventListener('change', () => {
+            const selectedOption = specSelect.options[specSelect.selectedIndex];
+            const stock = parseInt(selectedOption.dataset.stock, 10) || 0;
+            const suggested = Math.max(threshold - stock, 10);
+            stockDisplay.innerHTML = `当前库存：<span class="font-semibold ${stock === 0 ? 'text-red-600' : 'text-amber-600'}">${stock} 本</span>`;
+            suggestedDisplay.textContent = `${suggested} 本（补足到阈值 + 10 本安全库存）`;
+            qtyInput.value = suggested;
+          });
+        }
+      }, 0);
+    }
   }
 
   function openBatchRestockModal() {
-    const selectedBooks = state.admin.stockWarnings.filter(b => state.admin.selectedRestockBooks.has(b.id));
-    if (selectedBooks.length === 0) {
+    const selectedItems = [];
+    for (const key of state.admin.selectedRestockBooks) {
+      const [bookId, specId] = key.split(':');
+      const book = state.admin.stockWarnings.find(b => {
+        if (specId) {
+          return b.id === bookId && b.specId === specId;
+        }
+        return b.id === bookId && !b.specId;
+      });
+      if (book) {
+        selectedItems.push({ key, book });
+      }
+    }
+
+    if (selectedItems.length === 0) {
       showToast('请先选择需要补货的书籍', 'error');
       return;
     }
 
-    const bookList = selectedBooks.map(b => `
-      <div class="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-        <div>
-          <p class="font-medium text-sm">${b.title}</p>
-          <p class="text-xs text-slate-500">当前库存：${b.stock} / 阈值：${b.threshold}</p>
+    const bookList = selectedItems.map(({ key, book }) => {
+      const displayStock = book.isSpecLevel ? book.specStock : book.stock;
+      const displayTitle = book.isSpecLevel ? `${book.title} - ${book.specName}` : book.title;
+      const encodedKey = key.replace(/:/g, '__');
+      const fieldName = `item_${encodedKey}`;
+      return `
+        <div class="flex items-center justify-between p-2 bg-slate-50 rounded-lg gap-3">
+          <div class="flex-1 min-w-0">
+            <p class="font-medium text-sm truncate">${displayTitle}</p>
+            <p class="text-xs text-slate-500">当前库存：${displayStock} / 阈值：${book.threshold}</p>
+          </div>
+          <input class="input w-24 flex-shrink-0" name="${fieldName}" type="number" min="1" value="${Math.max(book.threshold - displayStock, 10)}" required />
         </div>
-        <input class="input w-24" name="qty_${b.id}" type="number" min="1" value="${Math.max(b.threshold - b.stock, 10)}" required />
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     openModal(`
       <div class="space-y-4">
         <h3 class="text-lg font-semibold">批量补货</h3>
-        <p class="text-sm text-slate-500">已选择 ${selectedBooks.length} 本书籍，请分别设置补货数量</p>
+        <p class="text-sm text-slate-500">已选择 ${selectedItems.length} 项，请分别设置补货数量</p>
         <form data-form="batch-restock" novalidate>
           <div class="space-y-2 max-h-80 overflow-y-auto">
             ${bookList}
@@ -373,14 +434,19 @@ export function bindEventHandlers({
     'single-restock': async (form) => {
       const data = getFormData(form);
       const bookId = form.dataset.bookId;
+      const specId = data.specId || undefined;
       const quantity = parseInt(data.quantity, 10);
       if (isNaN(quantity) || quantity < 1) {
         throw new Error('请输入有效的补货数量');
       }
-      await api.admin.restockBook({ bookId, quantity });
+      await api.admin.restockBook({ bookId, specId, quantity });
       closeModal();
       await Promise.all([loadStockWarnings(), loadAdmin(), loadRestockLogs(1)]);
-      state.admin.selectedRestockBooks.delete(bookId);
+      if (specId) {
+        state.admin.selectedRestockBooks.delete(`${bookId}:${specId}`);
+      } else {
+        state.admin.selectedRestockBooks.delete(bookId);
+      }
       safeRender();
       showToast('补货成功', 'success');
     },
@@ -388,11 +454,17 @@ export function bindEventHandlers({
       const data = getFormData(form);
       const items = [];
       for (const [key, value] of Object.entries(data)) {
-        if (key.startsWith('qty_')) {
-          const bookId = key.replace('qty_', '');
+        if (key.startsWith('item_')) {
+          const encodedKey = key.replace('item_', '');
+          const originalKey = encodedKey.replace(/__/g, ':');
+          const [bookId, specId] = originalKey.split(':');
           const quantity = parseInt(value, 10);
           if (!isNaN(quantity) && quantity > 0) {
-            items.push({ bookId, quantity });
+            items.push({
+              bookId,
+              specId: specId || undefined,
+              quantity
+            });
           }
         }
       }
@@ -404,7 +476,7 @@ export function bindEventHandlers({
       await Promise.all([loadStockWarnings(), loadAdmin(), loadRestockLogs(1)]);
       state.admin.selectedRestockBooks.clear();
       safeRender();
-      showToast(`批量补货成功，共补货 ${result.results.length} 本书籍`, 'success');
+      showToast(`批量补货成功，共补货 ${result.results.length} 项`, 'success');
     },
     'admin-add-spec': async (form) => {
       const data = getFormData(form);
@@ -942,31 +1014,51 @@ export function bindEventHandlers({
     'quick-restock': async (target) => {
       const bookId = target.dataset.id;
       const bookTitle = target.dataset.title;
+      const hasSpecs = target.dataset.hasSpecs === 'true';
+      const threshold = parseInt(target.dataset.threshold, 10) || 10;
+      let specs = [];
+      if (target.dataset.specs) {
+        try {
+          specs = JSON.parse(decodeURIComponent(target.dataset.specs));
+        } catch (e) {
+          specs = [];
+        }
+      }
       const book = state.admin.books.find(b => b.id === bookId);
-      const threshold = state.admin.stockThreshold?.bookThresholds?.find(bt => bt.bookId === bookId)?.threshold
-        ?? state.admin.stockThreshold?.global?.threshold ?? 10;
-      openSingleRestockModal(bookId, bookTitle, book?.stock ?? 0, threshold);
+      const currentStock = book?.stock ?? 0;
+      openSingleRestockModal(bookId, bookTitle, currentStock, threshold, null, null, hasSpecs, specs);
     },
     'single-restock': async (target) => {
       const bookId = target.dataset.id;
       const bookTitle = target.dataset.title;
       const currentStock = parseInt(target.dataset.stock, 10) || 0;
       const threshold = parseInt(target.dataset.threshold, 10) || 10;
-      openSingleRestockModal(bookId, bookTitle, currentStock, threshold);
+      const specId = target.dataset.specId || null;
+      const specName = target.dataset.specName || null;
+      const hasSpecs = target.dataset.hasSpecs === 'true';
+      let specs = [];
+      if (hasSpecs) {
+        const book = state.admin.books.find(b => b.id === bookId);
+        if (book && book.specs) {
+          specs = book.specs;
+        }
+      }
+      openSingleRestockModal(bookId, bookTitle, currentStock, threshold, specId, specName, hasSpecs, specs);
     },
     'toggle-restock-select': async (target) => {
-      const bookId = target.dataset.id;
+      const key = target.dataset.key;
       if (target.checked) {
-        state.admin.selectedRestockBooks.add(bookId);
+        state.admin.selectedRestockBooks.add(key);
       } else {
-        state.admin.selectedRestockBooks.delete(bookId);
+        state.admin.selectedRestockBooks.delete(key);
       }
       safeRender();
     },
     'toggle-select-all': async (target) => {
       if (target.checked) {
         state.admin.stockWarnings.forEach(book => {
-          state.admin.selectedRestockBooks.add(book.id);
+          const key = book.isSpecLevel ? `${book.id}:${book.specId}` : book.id;
+          state.admin.selectedRestockBooks.add(key);
         });
       } else {
         state.admin.selectedRestockBooks.clear();

@@ -137,12 +137,14 @@ const stockThresholdSchema = z.object({
 
 const singleRestockSchema = z.object({
   bookId: z.string().min(1),
+  specId: z.string().optional(),
   quantity: z.number().int().min(1)
 });
 
 const batchRestockSchema = z.object({
   items: z.array(z.object({
     bookId: z.string().min(1),
+    specId: z.string().optional(),
     quantity: z.number().int().min(1)
   })).min(1)
 });

@@ -253,15 +253,16 @@ model Book {
 }
 
 model BookSpec {
-  id          String   @id @default(cuid())
-  bookId      String
-  name        String
-  priceCents  Int
-  stock       Int      @default(0)
-  coverUrl    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  book        Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  id            String           @id @default(cuid())
+  bookId        String
+  name          String
+  priceCents    Int
+  stock         Int              @default(0)
+  coverUrl      String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  book          Book             @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  restockLogs   StockRestockLog[]
 
   @@unique([bookId, name])
 }
@@ -440,12 +441,15 @@ model StockThreshold {
 model StockRestockLog {
   id        String   @id @default(cuid())
   bookId    String
+  specId    String?
+  specName  String?
   quantity  Int
   oldStock  Int
   newStock  Int
   operator  String
   createdAt DateTime @default(now())
   book      Book     @relation(fields: [bookId], references: [id])
+  spec      BookSpec? @relation(fields: [specId], references: [id], onDelete: SetNull)
 }
 
 model Notification {

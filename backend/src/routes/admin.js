@@ -822,23 +822,54 @@ router.get('/stock/warnings', asyncHandler(async (req, res) => {
 
   const booksWithThresholds = await prisma.book.findMany({
     where: { status: 'ACTIVE' },
-    include: { stockThreshold: true, category: true }
+    include: { stockThreshold: true, category: true, specs: { orderBy: { createdAt: 'asc' } } }
   });
 
-  const warningBooks = booksWithThresholds
-    .map(book => {
-      const threshold = book.stockThreshold?.threshold ?? defaultThreshold;
-      const gap = threshold - book.stock;
-      return {
-        ...mapBook(book),
-        threshold,
-        gap,
-        isLowStock: book.stock < threshold,
-        isZeroStock: book.stock === 0
-      };
-    })
-    .filter(book => book.isLowStock)
-    .sort((a, b) => b.gap - a.gap);
+  const warningBooks = [];
+
+  for (const book of booksWithThresholds) {
+    const bookThreshold = book.stockThreshold?.threshold ?? defaultThreshold;
+
+    if (book.specs && book.specs.length > 0) {
+      for (const spec of book.specs) {
+        const gap = bookThreshold - spec.stock;
+        if (spec.stock < bookThreshold) {
+          warningBooks.push({
+            ...mapBook(book),
+            specId: spec.id,
+            specName: spec.name,
+            specStock: spec.stock,
+            specPrice: fromCents(spec.priceCents),
+            specCoverUrl: spec.coverUrl,
+            threshold: bookThreshold,
+            gap,
+            isLowStock: true,
+            isZeroStock: spec.stock === 0,
+            isSpecLevel: true
+          });
+        }
+      }
+    } else {
+      const gap = bookThreshold - book.stock;
+      if (book.stock < bookThreshold) {
+        warningBooks.push({
+          ...mapBook(book),
+          specId: null,
+          specName: null,
+          specStock: null,
+          specPrice: null,
+          specCoverUrl: null,
+          threshold: bookThreshold,
+          gap,
+          isLowStock: true,
+          isZeroStock: book.stock === 0,
+          isSpecLevel: false
+        });
+      }
+    }
+  }
+
+  warningBooks.sort((a, b) => b.gap - a.gap);
 
   res.json({
     total: warningBooks.length,
@@ -853,24 +884,46 @@ router.post('/stock/restock', asyncHandler(async (req, res) => {
 
   const result = await prisma.$transaction(async (tx) => {
     const book = await tx.book.findUnique({
-      where: { id: payload.bookId }
+      where: { id: payload.bookId },
+      include: { specs: true }
     });
 
     if (!book) {
       throw new ApiError(404, 'BOOK_NOT_FOUND');
     }
 
-    const oldStock = book.stock;
-    const newStock = oldStock + payload.quantity;
+    let oldStock;
+    let newStock;
+    let specId = null;
+    let specName = null;
 
-    await tx.book.update({
-      where: { id: payload.bookId },
-      data: { stock: newStock }
-    });
+    if (payload.specId) {
+      const spec = book.specs.find(s => s.id === payload.specId);
+      if (!spec) {
+        throw new ApiError(404, 'BOOK_SPEC_NOT_FOUND');
+      }
+      specId = spec.id;
+      specName = spec.name;
+      oldStock = spec.stock;
+      newStock = oldStock + payload.quantity;
+      await tx.bookSpec.update({
+        where: { id: payload.specId },
+        data: { stock: newStock }
+      });
+    } else {
+      oldStock = book.stock;
+      newStock = oldStock + payload.quantity;
+      await tx.book.update({
+        where: { id: payload.bookId },
+        data: { stock: newStock }
+      });
+    }
 
     const log = await tx.stockRestockLog.create({
       data: {
         bookId: payload.bookId,
+        specId,
+        specName,
         quantity: payload.quantity,
         oldStock,
         newStock,
@@ -878,7 +931,15 @@ router.post('/stock/restock', asyncHandler(async (req, res) => {
       }
     });
 
-    return { bookId: payload.bookId, oldStock, newStock, quantity: payload.quantity, logId: log.id };
+    return {
+      bookId: payload.bookId,
+      specId,
+      specName,
+      oldStock,
+      newStock,
+      quantity: payload.quantity,
+      logId: log.id
+    };
   });
 
   res.json(result);
@@ -893,24 +954,46 @@ router.post('/stock/restock/batch', asyncHandler(async (req, res) => {
 
     for (const item of payload.items) {
       const book = await tx.book.findUnique({
-        where: { id: item.bookId }
+        where: { id: item.bookId },
+        include: { specs: true }
       });
 
       if (!book) {
         throw new ApiError(404, `BOOK_NOT_FOUND: ${item.bookId}`);
       }
 
-      const oldStock = book.stock;
-      const newStock = oldStock + item.quantity;
+      let oldStock;
+      let newStock;
+      let specId = null;
+      let specName = null;
 
-      await tx.book.update({
-        where: { id: item.bookId },
-        data: { stock: newStock }
-      });
+      if (item.specId) {
+        const spec = book.specs.find(s => s.id === item.specId);
+        if (!spec) {
+          throw new ApiError(404, `BOOK_SPEC_NOT_FOUND: ${item.specId}`);
+        }
+        specId = spec.id;
+        specName = spec.name;
+        oldStock = spec.stock;
+        newStock = oldStock + item.quantity;
+        await tx.bookSpec.update({
+          where: { id: item.specId },
+          data: { stock: newStock }
+        });
+      } else {
+        oldStock = book.stock;
+        newStock = oldStock + item.quantity;
+        await tx.book.update({
+          where: { id: item.bookId },
+          data: { stock: newStock }
+        });
+      }
 
       const log = await tx.stockRestockLog.create({
         data: {
           bookId: item.bookId,
+          specId,
+          specName,
           quantity: item.quantity,
           oldStock,
           newStock,
@@ -921,6 +1004,8 @@ router.post('/stock/restock/batch', asyncHandler(async (req, res) => {
       results.push({
         bookId: item.bookId,
         bookTitle: book.title,
+        specId,
+        specName,
         oldStock,
         newStock,
         quantity: item.quantity,
@@ -965,6 +1050,8 @@ router.get('/stock/restock-logs', asyncHandler(async (req, res) => {
       id: log.id,
       bookId: log.bookId,
       bookTitle: log.book?.title,
+      specId: log.specId,
+      specName: log.specName,
       quantity: log.quantity,
       oldStock: log.oldStock,
       newStock: log.newStock,
